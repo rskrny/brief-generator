@@ -1,0 +1,21 @@
+# .gitignore
+
+# Local secrets
+.streamlit/secrets.toml
+
+# Virtual Environment
+venv/
+.venv/
+
+# Temporary files
+temp/
+bin/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
