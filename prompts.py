@@ -10,6 +10,7 @@ The "timeline" value should be an array of objects, where each object represents
 For EACH segment in the video, you must provide:
 - `start_time` (float): The start time of the segment in seconds.
 - `end_time` (float): The end time of the segment in seconds.
+- `screenshot_timestamp` (string): The single best timestamp within this segment for a representative screenshot, formatted as "HH:MM:SS.ms".
 - `shot_type` (string): The camera shot type (e.g., "Medium Close-Up," "POV Shot," "Wide Shot").
 - `action_description` (string): A concise description of the on-screen action and visuals.
 - `dialogue_or_text` (string): The exact dialogue spoken or text shown on screen during this segment.
@@ -41,3 +42,4 @@ Your entire output MUST be a valid JSON object with two top-level keys: "creativ
     
 The final shot list should cover the full duration of the reference video.
 """
+
