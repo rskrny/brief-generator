@@ -28,7 +28,7 @@ You are a world-class creative director. Your task is to take a detailed timelin
 The goal is to **mimic the timing, pacing, and style** of the reference video, but adapt the content for the new product.
 
 **Reference Video Total Duration:** {video_duration} seconds.
-**New Product to Feature:** {product_info}
+**New Product to Feature:** {product_name}
 
 **Provided Timeline Analysis (from reference video):**
 {timeline_analysis}

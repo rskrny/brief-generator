@@ -41,7 +41,7 @@ def get_video_analysis(api_key, video_path, duration):
         print(f"An error occurred during AI analysis: {e}")
         return None
 
-def generate_creative_brief(api_key, product_info, analysis_data, duration):
+def generate_creative_brief(api_key, product_name, analysis_data, duration):
     """
     Generates the creative brief using the "Creative Director" prompt.
     """
@@ -51,10 +51,10 @@ def generate_creative_brief(api_key, product_info, analysis_data, duration):
         model = genai.GenerativeModel(model_name="models/gemini-1.5-pro-latest")
 
         timeline_analysis_str = json.dumps(analysis_data, indent=2)
-        
+
         prompt = CREATIVE_DIRECTOR_PROMPT.format(
             video_duration=duration,
-            product_info=product_info,
+            product_name=product_name,
             timeline_analysis=timeline_analysis_str
         )
         
