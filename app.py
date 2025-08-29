@@ -63,10 +63,23 @@ if st.button("Generate Brief", type="primary"):
                 if not brief_json:
                     raise RuntimeError("Creative brief generation failed.")
 
-                # Normalize shot type key naming
+                # Normalize shot metadata
                 for shot in brief_json.get("shotList", []):
-                    if "shotType" in shot and "shot_type" not in shot:
-                        shot["shot_type"] = shot.pop("shotType")
+                    shot_type = shot.get("shot_type") or shot.get("shotType")
+                    if "shot_type" not in shot and shot_type:
+                        shot["shot_type"] = shot_type
+                    shot["screenshot_timestamp"] = (
+                        shot.get("screenshotTimestamp") or shot.get("screenshot_timestamp")
+                    )
+
+                # Validate screenshot count against shot list
+                shots = brief_json.get("shotList", [])
+                if len(screenshot_paths) != len(shots):
+                    st.warning("Screenshot count does not match shot list; adjusting.")
+                    if len(screenshot_paths) < len(shots):
+                        screenshot_paths += [""] * (len(shots) - len(screenshot_paths))
+                    else:
+                        screenshot_paths = screenshot_paths[: len(shots)]
 
                 st.write("✅ Creative brief written.")
 
