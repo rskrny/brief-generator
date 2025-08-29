@@ -10,14 +10,14 @@ if not os.path.exists(TEMP_DIR):
 
 def download_video(video_url):
     """
-    Downloads a video from a given URL to the temporary directory.
-    Returns the file path of the downloaded video.
+    Downloads a video from a given URL and returns its file path and duration.
     """
     print(f"Downloading video from: {video_url}")
     try:
+        video_path = os.path.join(TEMP_DIR, 'video.mp4')
         ydl_opts = {
             'format': 'best[ext=mp4][height<=1080]',
-            'outtmpl': os.path.join(TEMP_DIR, 'video.mp4'),
+            'outtmpl': video_path,
             'quiet': True,
             'merge_output_format': 'mp4',
             'overwrites': True,
@@ -25,14 +25,18 @@ def download_video(video_url):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
         
-        video_path = os.path.join(TEMP_DIR, 'video.mp4')
         print(f"Video downloaded successfully to: {video_path}")
-        return video_path
+        
+        # Get video duration using ffmpeg
+        probe = ffmpeg.probe(video_path)
+        duration = float(probe['format']['duration'])
+        print(f"Video duration: {duration:.2f} seconds")
+        
+        return video_path, duration
     except Exception as e:
-        print(f"An error occurred during video download: {e}")
-        return None
+        print(f"An error occurred during video download/probing: {e}")
+        return None, None
 
-# In video_processor.py
 
 def extract_screenshots(video_path, timestamps):
     """
@@ -60,3 +64,4 @@ def extract_screenshots(video_path, timestamps):
     
     print("Screenshot extraction complete.")
     return screenshot_paths
+
