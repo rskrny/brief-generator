@@ -37,7 +37,6 @@ def download_video(video_url):
         print(f"An error occurred during video download/probing: {e}")
         return None, None
 
-
 def extract_screenshots(video_path, timestamps):
     """
     Extracts screenshots from a video at specific timestamps.
@@ -51,7 +50,6 @@ def extract_screenshots(video_path, timestamps):
             (
                 ffmpeg
                 .input(video_path, ss=ts)
-                # This line is updated to use the modern quality command '-q:v 2'
                 .output(screenshot_path, vframes=1, **{'q:v': 2})
                 .overwrite_output()
                 .run(quiet=True)
@@ -64,4 +62,3 @@ def extract_screenshots(video_path, timestamps):
     
     print("Screenshot extraction complete.")
     return screenshot_paths
-
