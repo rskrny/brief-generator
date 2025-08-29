@@ -35,24 +35,32 @@ if st.button("Generate Brief", type="primary"):
                 # Full workflow execution
                 status.update(label="Step 1/5: Downloading video...")
                 video_path, duration = download_video(video_url)
+                if not video_path:
+                    raise RuntimeError("Video download failed.")
                 st.write(f"✅ Video downloaded ({duration:.2f}s).")
 
                 status.update(label="Step 2/5: Performing timeline analysis...")
                 analysis_data = get_video_analysis(gemini_api_key, video_path, duration)
+                if not analysis_data:
+                    raise RuntimeError("AI timeline analysis failed.")
                 st.write("✅ AI timeline analysis complete.")
 
                 status.update(label="Step 3/5: Extracting key moments...")
                 timestamps = [scene['screenshot_timestamp'] for scene in analysis_data.get('timeline', []) if 'screenshot_timestamp' in scene]
                 screenshot_paths = extract_screenshots(video_path, timestamps)
+                if not screenshot_paths:
+                    raise RuntimeError("No screenshots were extracted.")
                 st.write(f"✅ Extracted {len(screenshot_paths)} screenshots.")
 
                 status.update(label="Step 4/5: Generating creative brief...")
                 brief_json = generate_creative_brief(gemini_api_key, product_name, analysis_data, duration)
+                if not brief_json:
+                    raise RuntimeError("Creative brief generation failed.")
                 st.write("✅ Creative brief written.")
 
                 status.update(label="Step 5/5: Assembling final PDF...")
                 pdf_path = "brief.pdf"
-                create_pdf_brief(product_info, brief_json, screenshot_paths, pdf_path)
+                create_pdf_brief(product_name, brief_json, screenshot_paths, pdf_path)
                 st.write("✅ PDF assembled.")
                 
                 # Store results for download button
