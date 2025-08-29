@@ -1,1 +1,7 @@
-# requirements.txtstreamlityt-dlpffmpeg-pythongoogle-generativeaifpdf2
+streamlit
+yt-dlp
+ffmpeg-python
+google-generativeai
+pillow
+fpdf2
+streamlityt-dlpffmpeg-pythongoogle-generativeaifpdf2
