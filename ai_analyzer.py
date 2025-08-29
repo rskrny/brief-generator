@@ -3,7 +3,6 @@ import google.generativeai as genai
 import time
 import json
 from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
-from PIL import Image
 
 def get_video_analysis(api_key, video_path, duration):
     """
