@@ -1,34 +1,38 @@
 # document_generator.py
 import os
 from fpdf import FPDF
-import sys
 
-# Get the base path to handle running in different environments
-base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-FONT_PATH = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
+# --- UPDATED SECTION ---
+# This creates a reliable, absolute path to the font file
+# It finds the directory the script is in, then looks for "fonts/DejaVuSans.ttf"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(SCRIPT_DIR, 'fonts', 'DejaVuSans.ttf')
+# --- END UPDATED SECTION ---
 
 class PDF(FPDF):
     def header(self):
-        self.add_font('DejaVu', 'B', FONT_PATH, uni=True)
-        self.set_font('DejaVu', 'B', 12)
+        try:
+            self.add_font('DejaVu', 'B', FONT_PATH, uni=True)
+            self.set_font('DejaVu', 'B', 12)
+        except RuntimeError:
+            # Fallback to a built-in font if custom font fails to load
+            self.set_font('Arial', 'B', 12)
         self.cell(0, 10, 'AI-Generated Influencer Brief', 0, 1, 'C')
         self.ln(10)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('DejaVu', 'I', 8)
+        self.set_font('Arial', 'I', 8) # Using a basic font for the footer is safe
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
     def add_section_title(self, title):
         self.set_font('DejaVu', 'B', 14)
-        # Handle potential encoding issues in titles
         safe_title = title.encode('latin-1', 'replace').decode('latin-1')
         self.cell(0, 10, safe_title, 0, 1, 'L')
         self.ln(4)
 
     def add_body_text(self, text):
         self.set_font('DejaVu', '', 12)
-        # Handle potential encoding issues in body text
         safe_text = text.encode('latin-1', 'replace').decode('latin-1')
         self.multi_cell(0, 10, safe_text)
         self.ln()
@@ -51,7 +55,7 @@ def create_pdf_brief(product_info, analysis_data, brief_text, screenshot_paths, 
         pdf.add_body_text(dna_text)
         
     # Creative Brief Text from AI
-    pdf.add_body_text(brief_text) # The title is now part of the markdown
+    pdf.add_body_text(brief_text)
     
     # Screenshots
     if screenshot_paths:
