@@ -1,9 +1,16 @@
 # ai_analyzer.py
+
 import google.generativeai as genai
 import time
 import json
 from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
-from PIL import Image
+
+
+
+import google.generativeai as genai
+import time
+import json
+from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
 
 def parse_gemini_json(raw: str) -> dict | None:
     """Parse JSON output from Gemini, stripping code fences.
@@ -29,6 +36,7 @@ def parse_gemini_json(raw: str) -> dict | None:
         return None
 
 def get_video_analysis(api_key, video_path, duration):
+
     """
     Analyzes the video using the full timeline "Analyst" prompt.
     """
