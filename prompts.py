@@ -51,21 +51,17 @@ The goal is to **mimic the timing, pacing, and style** of the reference video, b
 **New Product to Feature:** {product_name}
 
 **Provided Timeline Analysis (from reference video):**
-{timeline_analysis}
-
-**Translation Map (reference_action -> new_action):**
-{translation_map}
 
 **Your Task:**
 Generate a new, complete creative brief in a structured JSON format.
 Your entire output MUST be a valid JSON object with two top-level keys: "creativeConcept" and "shotList".
 
 1.  **"creativeConcept"**: A string containing a short, catchy concept for the new video.
+
 2.  **"shotList"**: An array of shot objects for the **new video**. Each object must include the keys `start_time`, `end_time`, `shot_type`, `action_description`, `dialogue_or_text`, and `editing_notes`. For each object, you must:
     * Re-use the `start_time` and `end_time` from the reference timeline to maintain the same pacing.
-    * Re-use or adapt the `shot_type` and `editing_notes` to match the original style.
-    * Use the `translation_map` to replace each reference action with the corresponding `new_action` so that `action_description`
-      and `dialogue_or_text` relate to the **new product**.
+    * e or adapt the `shot_type` and `editing_notes` to match the original style. 
+    
 
 The final shot list should cover the full duration of the reference video.
 """
