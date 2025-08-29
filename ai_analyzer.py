@@ -1,16 +1,14 @@
 # ai_analyzer.py
 
-import google.generativeai as genai
-import time
-import json
-from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
-
-
 
 import google.generativeai as genai
 import time
 import json
 from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
+
+
+
+
 
 def parse_gemini_json(raw: str) -> dict | None:
     """Parse JSON output from Gemini, stripping code fences.
@@ -105,3 +103,4 @@ def generate_creative_brief(api_key, product_name, analysis_data, duration):
     except Exception as e:
         print(f"An error occurred during creative brief generation: {e}")
         return None
+
