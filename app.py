@@ -21,7 +21,7 @@ if 'pdf_filename' not in st.session_state:
 
 product_name = st.text_input("Product Name + Brand")
 video_url = st.text_area("TikTok, Instagram, or YouTube URL")
-    
+
 if st.button("Generate Brief", type="primary"):
     gemini_api_key = st.secrets.get("GEMINI_API_KEY")
     if not product_name or not video_url:
@@ -32,19 +32,21 @@ if st.button("Generate Brief", type="primary"):
         st.session_state.run_complete = False  # Reset on new run
         with st.status("Starting high-detail workflow...", expanded=True) as status:
             try:
-                # Full workflow execution
+                # Step 1/5: Download video
                 status.update(label="Step 1/5: Downloading video...")
                 video_path, duration = download_video(video_url)
                 if not video_path:
                     raise RuntimeError("Video download failed.")
                 st.write(f"✅ Video downloaded ({duration:.2f}s).")
 
+                # Step 2/5: Timeline analysis
                 status.update(label="Step 2/5: Performing timeline analysis...")
                 analysis_data = get_video_analysis(gemini_api_key, video_path, duration)
                 if not analysis_data:
                     raise RuntimeError("AI timeline analysis failed.")
                 st.write("✅ AI timeline analysis complete.")
 
+                # Step 3/5: Extract key moments
                 status.update(label="Step 3/5: Extracting key moments...")
                 timestamps = [
                     scene["screenshot_timestamp"]
@@ -56,6 +58,7 @@ if st.button("Generate Brief", type="primary"):
                     raise RuntimeError("No screenshots were extracted.")
                 st.write(f"✅ Extracted {len(screenshot_paths)} screenshots.")
 
+                # Step 4/5: Generate creative brief
                 status.update(label="Step 4/5: Generating creative brief...")
                 brief_json = generate_creative_brief(
                     gemini_api_key, product_name, analysis_data, duration
@@ -83,6 +86,7 @@ if st.button("Generate Brief", type="primary"):
 
                 st.write("✅ Creative brief written.")
 
+                # Step 5/5: Assemble final PDF
                 status.update(label="Step 5/5: Assembling final PDF...")
                 pdf_path = "brief.pdf"
                 create_pdf_brief(product_name, brief_json, screenshot_paths, pdf_path)
@@ -91,6 +95,7 @@ if st.button("Generate Brief", type="primary"):
                 # Store results for download button
                 st.session_state.pdf_path = pdf_path
                 st.session_state.pdf_filename = f"{product_name.replace(' ', '_')}_Brief.pdf"
+
             except Exception as e:
                 st.error(f"An unexpected error occurred: {e}")
                 status.update(state="error", expanded=False)
