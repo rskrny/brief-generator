@@ -119,4 +119,4 @@ def create_pdf_brief(product_name, brief_json, screenshot_paths, output_path="br
         pdf.ln()
 
     pdf.output(output_path)
-    return output_path
+    
