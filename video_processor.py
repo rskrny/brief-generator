@@ -42,8 +42,6 @@ def extract_screenshots(video_path, timestamps):
     for i, ts in enumerate(timestamps):
         screenshot_path = os.path.join(TEMP_DIR, f'screenshot_{i+1}.jpg')
         try:
-            # We no longer need to specify the command path.
-            # The library will find the system-installed ffmpeg automatically.
             (
                 ffmpeg
                 .input(video_path, ss=ts)
@@ -54,7 +52,8 @@ def extract_screenshots(video_path, timestamps):
             screenshot_paths.append(screenshot_path)
             print(f"  - Screenshot {i+1} saved to: {screenshot_path}")
         except ffmpeg.Error as e:
-            print(f"An ffmpeg error occurred for timestamp {ts}: {e}")
+            # This line is updated to provide a more detailed error
+            print(f"An ffmpeg error occurred for timestamp {ts}. Stderr: {e.stderr.decode('utf8')}")
             continue
     
     print("Screenshot extraction complete.")
