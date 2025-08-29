@@ -73,7 +73,7 @@ def create_pdf_brief(product_name, brief_json, screenshot_paths, output_path="br
             f"{shot.get('start_time', 0):.1f}s - {shot.get('end_time', 0):.1f}s",
             shot.get("action_description", ""),
             shot.get("dialogue_or_text", ""),
-            shot.get("shotType", "")
+            shot.get("shot_type") or shot.get("shotType", "")
         ]
         
         max_height = 0

@@ -56,6 +56,15 @@ if st.button("Generate Brief", type="primary"):
                 brief_json = generate_creative_brief(gemini_api_key, product_name, analysis_data, duration)
                 if not brief_json:
                     raise RuntimeError("Creative brief generation failed.")
+# normalize shot metadata
+for shot in brief_json.get("shotList", []):
+    shot_type = shot.get("shot_type") or shot.get("shotType")
+    if "shot_type" not in shot and shot_type:
+        shot["shot_type"] = shot_type
+    shot["screenshot_timestamp"] = (
+        shot.get("screenshotTimestamp") or shot.get("screenshot_timestamp")
+    )
+
                 st.write("✅ Creative brief written.")
 
                 status.update(label="Step 5/5: Assembling final PDF...")

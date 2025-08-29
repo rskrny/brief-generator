@@ -38,7 +38,7 @@ Generate a new, complete creative brief in a structured JSON format.
 Your entire output MUST be a valid JSON object with two top-level keys: "creativeConcept" and "shotList".
 
 1.  **"creativeConcept"**: A string containing a short, catchy concept for the new video.
-2.  **"shotList"**: An array of shot objects for the **new video**. For each object, you must:
+2.  **"shotList"**: An array of shot objects for the **new video**. Each object must include the keys `start_time`, `end_time`, `shot_type`, `action_description`, `dialogue_or_text`, and `editing_notes`. For each object, you must:
     * Re-use the `start_time` and `end_time` from the reference timeline to maintain the same pacing.
     * Re-use or adapt the `shot_type` and `editing_notes` to match the original style.
     * Write completely new `dialogue_or_text` and `action_description` that are relevant to the **new product**.
