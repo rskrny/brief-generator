@@ -1,22 +1,20 @@
 # prompts.py
 
-# This is the NEW, more robust prompt for Pass 1: The Analyst
+# Final, highly specific prompt for Pass 1: The Analyst
 ANALYST_PROMPT = """
 You are a world-class video analyst and brand strategist. Your task is to analyze the provided video file and deconstruct its core components.
 Your entire output MUST be a valid JSON object. Do not include any text before or after the JSON object.
 
 The JSON object must have two main keys: "influencerDNA" and "keyMoments".
 
-1.  **influencerDNA**: A comprehensive profile of the creator's style. This should include:
-    * **Persona**: What is their archetype? (e.g., 'The Relatable Best Friend', 'The Witty Tech Expert').
-    * **ToneVibe**: Describe the emotional texture of the video (e.g., 'Upbeat and comedic', 'Calm and educational').
-    * **VerbalStyle**: Analyze their pacing, vocabulary, and sentence structure.
-    * **ProductionAesthetic**: Describe the technical style, including editing, camera work, color, and sound.
+1.  **influencerDNA**: A comprehensive profile of the creator's style. (Persona, ToneVibe, VerbalStyle, ProductionAesthetic).
 
-2.  **keyMoments**: You are REQUIRED to identify **exactly 4 distinct moments** from the video that would be useful as visual references. You MUST NOT return an empty list.
-    * For each moment, you must provide a `timestamp` (in "HH:MM:SS.ms" format), a `description`, and a `category`.
-    * The `category` must be ONE of the following: ["Opener", "Product Shot", "User Interaction", "Unique Style", "Call to Action"].
-    * **CRITICAL FALLBACK INSTRUCTION:** If you cannot find a clear example for a specific category, you MUST select the next best available shot that is visually distinct and useful as a reference, assigning it the most relevant category possible. The goal is to always provide 4 timestamps for screenshotting.
+2.  **keyMoments**: You are REQUIRED to identify **exactly 4 distinct moments**. You MUST NOT return an empty list. For each moment, provide:
+    * **timestamp**: The exact start time. **CRITICAL: The timestamp MUST be in the full "HH:MM:SS.ms" format.** For example, 5.5 seconds must be formatted as "00:00:05.500". A time of 0.66 seconds must be "00:00:00.660".
+    * **description**: A brief explanation of what is happening.
+    * **category**: One of ["Opener", "Product Shot", "User Interaction", "Unique Style", "Call to Action"].
+
+    Prioritize finding at least one 'Product Shot' and one 'User Interaction' if they exist.
 """
 
 # The Creative Director prompt can remain the same for now
@@ -44,3 +42,4 @@ Create a Markdown table with the following columns: "Scene", "Shooting Direction
 - **Do**: List 3-4 key actions that are essential for a successful video.
 - **Don't**: List 3-4 things the influencer should avoid to maintain brand alignment.
 """
+
