@@ -22,6 +22,20 @@ For EACH segment in the video, you must provide:
 Break down the entire video from beginning to end. The end time of the last segment should match the video's total duration.
 """
 
+# Prompt to build a translation/strategy map between products
+STRATEGY_PROMPT = """
+You are a marketing strategist. A reference video promotes "{reference_product}" with these key features:
+{reference_features}
+
+We want to create a new video for a different product that has these key features:
+{new_features}
+
+Using the reference video's timeline analysis:
+{timeline_analysis}
+
+Produce a JSON object with a single key `translationMap` that explains how to adapt the reference product's themes and features to the new product's features. Ensure the JSON is valid.
+"""
+
 # Final Creative Director prompt to translate the timeline
 CREATIVE_DIRECTOR_PROMPT = """
 You are a world-class creative director. Your task is to take a detailed timeline analysis from a reference video and repurpose it to create a new, original shot list for a different product.
@@ -29,6 +43,11 @@ The goal is to **mimic the timing, pacing, and style** of the reference video, b
 
 **Reference Video Total Duration:** {video_duration} seconds.
 **New Product to Feature:** {product_name}
+**Key Features of the New Product:**
+{product_features}
+
+**Strategy Translation Map:**
+{strategy_map}
 
 **Provided Timeline Analysis (from reference video):**
 {timeline_analysis}
@@ -42,6 +61,6 @@ Your entire output MUST be a valid JSON object with two top-level keys: "creativ
     * Re-use the `start_time` and `end_time` from the reference timeline to maintain the same pacing.
     * Re-use or adapt the `shot_type` and `editing_notes` to match the original style.
     * Write completely new `dialogue_or_text` and `action_description` that are relevant to the **new product**.
-    
+
 The final shot list should cover the full duration of the reference video.
 """
