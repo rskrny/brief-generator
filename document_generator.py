@@ -2,6 +2,7 @@
 import os
 from fpdf import FPDF
 import sys
+import json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(SCRIPT_DIR, 'fonts', 'DejaVuSans.ttf')
@@ -53,48 +54,59 @@ def create_pdf_brief(product_info, brief_json, screenshot_paths, output_path="br
         pdf.output(output_path)
         return output_path
 
-    line_height = pdf.font_size * 1.5
-    col_widths = {"time": 20, "action": 55, "dialogue": 55, "shot": 30, "ref": 30}
-    headers = ["Time (s)", "Action / Direction", "Dialogue / Text", "Shot Type", "Reference"]
-
-    pdf.set_font('DejaVu', 'B', 8)
+    # --- NEW, ROBUST TABLE LOGIC ---
+    col_widths = (20, 55, 55, 30, 30)  # Timestamp, Action, Dialogue, Shot Type, Reference
+    headers = ("Time (s)", "Action / Direction", "Dialogue / Text", "Shot Type", "Reference")
+    
+    pdf.set_font("DejaVu", "B", 8)
+    pdf.set_fill_color(230, 230, 230)
     for i, header in enumerate(headers):
-        pdf.cell(list(col_widths.values())[i], 10, header, border=1, align='C')
-    pdf.ln(10)
+        pdf.cell(col_widths[i], 7, header, 1, 0, 'C', 1)
+    pdf.ln()
 
-    pdf.set_font('DejaVu', '', 8)
+    pdf.set_font("DejaVu", "", 8)
     for i, shot in enumerate(shot_list):
-        y_start = pdf.get_y()
-        time_text = f"{shot.get('start_time', 0):.1f}s - {shot.get('end_time', 0):.1f}s"
+        row = [
+            f"{shot.get('start_time', 0):.1f}s - {shot.get('end_time', 0):.1f}s",
+            shot.get("action_description", ""),
+            shot.get("dialogue_or_text", ""),
+            shot.get("shotType", "")
+        ]
+
+        # Calculate max height of the row before writing
+        max_height = 0
+        for i_col, text in enumerate(row):
+            lines = pdf.multi_cell(col_widths[i_col], 4, text, split_only=True)
+            text_height = len(lines) * 4
+            if text_height > max_height:
+                max_height = text_height
         
-        # Calculate row height based on the tallest cell
-        h1 = pdf.multi_cell(col_widths["time"], 4, time_text, border=0, align='C', split_only=True)
-        h2 = pdf.multi_cell(col_widths["action"], 4, shot.get("action_description", ""), border=0, align='L', split_only=True)
-        h3 = pdf.multi_cell(col_widths["dialogue"], 4, shot.get("dialogue_or_text", ""), border=0, align='L', split_only=True)
-        h4 = pdf.multi_cell(col_widths["shot"], 4, shot.get("shotType", ""), border=0, align='C', split_only=True)
-        row_height = max(len(h1), len(h2), len(h3), len(h4)) * 4 + 2 # Add padding
+        # Ensure a minimum height for the image
+        img_height = 30
+        final_row_height = max(max_height, img_height)
 
-        # Draw text cells with calculated height
-        pdf.multi_cell(col_widths["time"], row_height, time_text, border='LR', align='C')
-        x_pos = pdf.l_margin + col_widths["time"]
-        pdf.set_xy(x_pos, y_start)
-        pdf.multi_cell(col_widths["action"], row_height, shot.get("action_description", ""), border='R', align='L')
-        x_pos += col_widths["action"]
-        pdf.set_xy(x_pos, y_start)
-        pdf.multi_cell(col_widths["dialogue"], row_height, shot.get("dialogue_or_text", ""), border='R', align='L')
-        x_pos += col_widths["dialogue"]
-        pdf.set_xy(x_pos, y_start)
-        pdf.multi_cell(col_widths["shot"], row_height, shot.get("shotType", ""), border='R', align='C')
-
-        # Draw the image in its cell
+        # Draw text cells
+        start_y = pdf.get_y()
+        pdf.multi_cell(col_widths[0], 4, row[0], border='LR', align='C')
+        pdf.set_xy(pdf.l_margin + col_widths[0], start_y)
+        pdf.multi_cell(col_widths[1], 4, row[1], border='R', align='L')
+        pdf.set_xy(pdf.l_margin + col_widths[0] + col_widths[1], start_y)
+        pdf.multi_cell(col_widths[2], 4, row[2], border='R', align='L')
+        pdf.set_xy(pdf.l_margin + col_widths[0] + col_widths[1] + col_widths[2], start_y)
+        pdf.multi_cell(col_widths[3], 4, row[3], border='R', align='C')
+        
+        # Draw image cell
         if i < len(screenshot_paths):
-            x_pos += col_widths["shot"]
-            pdf.image(screenshot_paths[i], x=x_pos, y=y_start, w=col_widths["ref"], h=row_height)
+            x_pos = pdf.l_margin + sum(col_widths[:4])
+            pdf.image(screenshot_paths[i], x=x_pos, y=start_y, w=col_widths[4], h=final_row_height)
         
-        # Draw the bottom border of the row
-        pdf.set_xy(pdf.l_margin, y_start + row_height)
-        pdf.cell(sum(col_widths.values()), 0, '', border='T')
-        pdf.ln(0)
+        # Draw border on the right of the image cell
+        pdf.set_xy(pdf.l_margin + sum(col_widths[:4]), start_y)
+        pdf.cell(col_widths[4], final_row_height, '', border='R')
+
+        pdf.set_y(start_y + final_row_height)
+        pdf.cell(sum(col_widths), 0, '', border='T')
+        pdf.ln()
 
     pdf.output(output_path)
     return output_path
