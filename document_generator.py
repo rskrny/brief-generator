@@ -2,6 +2,9 @@
 import os
 from fpdf import FPDF
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(SCRIPT_DIR, 'fonts', 'DejaVuSans.ttf')
@@ -101,9 +104,13 @@ def create_pdf_brief(product_name, brief_json, screenshot_paths, output_path="br
         pdf.multi_cell(pdf.col_widths[3], 4, row[3], border='R', align='C')
         
         if i < len(screenshot_paths):
-            x_pos = pdf.l_margin + sum(pdf.col_widths[:4])
-            pdf.image(screenshot_paths[i], x=x_pos, y=start_y, w=pdf.col_widths[4], h=final_row_height)
-        
+            img_path = screenshot_paths[i]
+            if img_path and os.path.isfile(img_path):
+                x_pos = pdf.l_margin + sum(pdf.col_widths[:4])
+                pdf.image(img_path, x=x_pos, y=start_y, w=pdf.col_widths[4], h=final_row_height)
+            else:
+                logger.warning(f"Missing screenshot at index {i}: {img_path}")
+
         pdf.set_xy(pdf.l_margin + sum(pdf.col_widths[:4]), start_y)
         pdf.cell(pdf.col_widths[4], final_row_height, '', border='R')
         
