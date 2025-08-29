@@ -1,12 +1,15 @@
 # prompts.py
 
-# NEW Analyst prompt for full timeline breakdown
+# Final, DYNAMIC prompt for Pass 1: The Analyst
 ANALYST_PROMPT = """
 You are a meticulous video editor and analyst. Your task is to perform a granular, second-by-second analysis of the provided video file.
 The video's total duration is **{video_duration}** seconds.
 Your entire output MUST be a valid JSON object containing a single key: "timeline".
 
 The "timeline" value should be an array of objects, where each object represents a distinct scene or action segment.
+
+**CRITICAL INSTRUCTION: The number of segments you identify should be appropriate for the video's total duration. As a general rule, aim to create a new, distinct segment for roughly every 5-10 seconds of video, or whenever a significant change in action, shot, or dialogue occurs.**
+
 For EACH segment in the video, you must provide:
 - `start_time` (float): The start time of the segment in seconds.
 - `end_time` (float): The end time of the segment in seconds.
@@ -19,7 +22,7 @@ For EACH segment in the video, you must provide:
 Break down the entire video from beginning to end. The end time of the last segment should match the video's total duration.
 """
 
-# NEW Creative Director prompt to translate the timeline
+# Final Creative Director prompt to translate the timeline
 CREATIVE_DIRECTOR_PROMPT = """
 You are a world-class creative director. Your task is to take a detailed timeline analysis from a reference video and repurpose it to create a new, original shot list for a different product.
 The goal is to **mimic the timing, pacing, and style** of the reference video, but adapt the content for the new product.
@@ -42,4 +45,3 @@ Your entire output MUST be a valid JSON object with two top-level keys: "creativ
     
 The final shot list should cover the full duration of the reference video.
 """
-
