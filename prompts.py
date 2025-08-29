@@ -1,7 +1,6 @@
 # prompts.py
 
-# This is the NEW prompt for Pass 1: The Analyst
-# It is much more specific and demanding to ensure consistent results.
+# This is the NEW, more robust prompt for Pass 1: The Analyst
 ANALYST_PROMPT = """
 You are a world-class video analyst and brand strategist. Your task is to analyze the provided video file and deconstruct its core components.
 Your entire output MUST be a valid JSON object. Do not include any text before or after the JSON object.
@@ -14,16 +13,13 @@ The JSON object must have two main keys: "influencerDNA" and "keyMoments".
     * **VerbalStyle**: Analyze their pacing, vocabulary, and sentence structure.
     * **ProductionAesthetic**: Describe the technical style, including editing, camera work, color, and sound.
 
-2.  **keyMoments**: You are REQUIRED to identify **exactly 4 distinct moments** from the video that would be useful as visual references. For each moment, you must provide:
-    * **timestamp**: The exact start time of the moment in "HH:MM:SS.ms" format (e.g., '00:00:12.500').
-    * **description**: A brief explanation of what is happening and why it's a useful reference.
-    * **category**: You must classify the moment using ONE of the following categories: ["Opener", "Product Shot", "User Interaction", "Unique Style", "Call to Action"].
-
-    Prioritize finding at least one 'Product Shot' and one 'User Interaction' if they exist in the video. Fill the remaining slots with other categories to best represent the video's structure and style.
+2.  **keyMoments**: You are REQUIRED to identify **exactly 4 distinct moments** from the video that would be useful as visual references. You MUST NOT return an empty list.
+    * For each moment, you must provide a `timestamp` (in "HH:MM:SS.ms" format), a `description`, and a `category`.
+    * The `category` must be ONE of the following: ["Opener", "Product Shot", "User Interaction", "Unique Style", "Call to Action"].
+    * **CRITICAL FALLBACK INSTRUCTION:** If you cannot find a clear example for a specific category, you MUST select the next best available shot that is visually distinct and useful as a reference, assigning it the most relevant category possible. The goal is to always provide 4 timestamps for screenshotting.
 """
 
-# This is the prompt for Pass 2: The Creative Director
-# (This prompt can remain the same)
+# The Creative Director prompt can remain the same for now
 CREATIVE_DIRECTOR_PROMPT = """
 You are a top-tier creative director for influencer marketing. Your task is to generate a complete, professional influencer briefing document based on the provided information.
 The output should be well-structured using Markdown formatting.
