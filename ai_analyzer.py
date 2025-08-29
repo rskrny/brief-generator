@@ -1,10 +1,42 @@
 # ai_analyzer.py
+
 import google.generativeai as genai
 import time
 import json
 from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
 
+
+
+import google.generativeai as genai
+import time
+import json
+from prompts import ANALYST_PROMPT, CREATIVE_DIRECTOR_PROMPT
+
+def parse_gemini_json(raw: str) -> dict | None:
+    """Parse JSON output from Gemini, stripping code fences.
+
+    Args:
+        raw: Raw string returned by Gemini which may include code fences.
+
+    Returns:
+        Parsed JSON as a dictionary or ``None`` if parsing fails.
+    """
+    cleaned = raw.strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        lines = cleaned.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        print(f"Warning: failed to parse Gemini JSON response: {exc}")
+        return None
+
 def get_video_analysis(api_key, video_path, duration):
+
     """
     Analyzes the video using the full timeline "Analyst" prompt.
     """
@@ -30,9 +62,11 @@ def get_video_analysis(api_key, video_path, duration):
         print("Deleting uploaded file...")
         genai.delete_file(video_file.name)
 
-        analysis_json = response.text.strip().replace("```json", "").replace("```", "")
-        analysis_data = json.loads(analysis_json)
-        
+        analysis_data = parse_gemini_json(response.text)
+        if analysis_data is None:
+            print("Failed to parse timeline analysis JSON.")
+            return None
+
         print("AI timeline analysis complete.")
         return analysis_data
 
@@ -60,9 +94,11 @@ def generate_creative_brief(api_key, product_name, analysis_data, duration):
         print("Generating creative brief with Gemini 1.5 Pro...")
         response = model.generate_content(prompt)
         
-        brief_json_str = response.text.strip().replace("```json", "").replace("```", "")
-        brief_data = json.loads(brief_json_str)
-        
+        brief_data = parse_gemini_json(response.text)
+        if brief_data is None:
+            print("Failed to parse creative brief JSON.")
+            return None
+
         print("Creative brief generated successfully.")
         return brief_data
 

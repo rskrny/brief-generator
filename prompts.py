@@ -22,6 +22,26 @@ For EACH segment in the video, you must provide:
 Break down the entire video from beginning to end. The end time of the last segment should match the video's total duration.
 """
 
+# Prompt for mapping reference actions to new product actions
+STRATEGY_PROMPT = """
+You are a marketing strategist. Using the detailed timeline analysis of a reference video,
+plus information about the reference product and the new product, create a translation map
+that explains how each reference action or message should be adapted for the new product.
+
+**Timeline Analysis:**
+{timeline_analysis}
+
+**Reference Product Details:**
+{reference_product_details}
+
+**New Product Information:**
+{new_product_info}
+
+Your entire output MUST be a valid JSON object with a single top-level key
+"translation_map". Each entry should map a `reference_action` to a corresponding
+`new_action` suitable for the new product.
+"""
+
 # Final Creative Director prompt to translate the timeline
 CREATIVE_DIRECTOR_PROMPT = """
 You are a world-class creative director. Your task is to take a detailed timeline analysis from a reference video and repurpose it to create a new, original shot list for a different product.
@@ -33,6 +53,9 @@ The goal is to **mimic the timing, pacing, and style** of the reference video, b
 **Provided Timeline Analysis (from reference video):**
 {timeline_analysis}
 
+**Translation Map (reference_action -> new_action):**
+{translation_map}
+
 **Your Task:**
 Generate a new, complete creative brief in a structured JSON format.
 Your entire output MUST be a valid JSON object with two top-level keys: "creativeConcept" and "shotList".
@@ -41,7 +64,8 @@ Your entire output MUST be a valid JSON object with two top-level keys: "creativ
 2.  **"shotList"**: An array of shot objects for the **new video**. Each object must include the keys `start_time`, `end_time`, `shot_type`, `action_description`, `dialogue_or_text`, and `editing_notes`. For each object, you must:
     * Re-use the `start_time` and `end_time` from the reference timeline to maintain the same pacing.
     * Re-use or adapt the `shot_type` and `editing_notes` to match the original style.
-    * Write completely new `dialogue_or_text` and `action_description` that are relevant to the **new product**.
-    
+    * Use the `translation_map` to replace each reference action with the corresponding `new_action` so that `action_description`
+      and `dialogue_or_text` relate to the **new product**.
+
 The final shot list should cover the full duration of the reference video.
 """
