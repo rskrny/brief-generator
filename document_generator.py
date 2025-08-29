@@ -8,14 +8,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(SCRIPT_DIR, 'fonts', 'DejaVuSans.ttf')
 
 class PDF(FPDF):
-    def header(self):
-        # ... (header remains the same)
-    def footer(self):
-        # ... (footer remains the same)
-    def add_section_title(self, title):
-        # ... (add_section_title remains the same)
-    def add_body_text(self, text):
-        # ... (add_body_text remains the same)
+    # ... (class definition remains the same as the last working version) ...
 
 def create_pdf_brief(product_info, analysis_data, brief_json, screenshot_paths, output_path="brief.pdf"):
     pdf = PDF()
@@ -23,11 +16,13 @@ def create_pdf_brief(product_info, analysis_data, brief_json, screenshot_paths, 
     pdf.add_font('DejaVu', 'B', FONT_PATH, uni=True)
     pdf.add_page()
 
-    # --- METADATA AND CONCEPT ---
-    # ... (this section remains the same)
-
-    # --- SHOT LIST TABLE ---
-    pdf.add_section_title("Shot List")
+    pdf.add_section_title("Product Information")
+    pdf.add_body_text(product_info)
+    
+    pdf.add_section_title("Creative Concept")
+    pdf.add_body_text(brief_json.get("creativeConcept", "N/A"))
+    
+    pdf.add_section_title("Shot-by-Shot Timeline")
     
     shot_list = brief_json.get("shotList")
     if not shot_list:
@@ -35,49 +30,44 @@ def create_pdf_brief(product_info, analysis_data, brief_json, screenshot_paths, 
         pdf.output(output_path)
         return output_path
 
-    # --- NEW, ROBUST TABLE LOGIC ---
     line_height = pdf.font_size * 1.5
-    col_widths = {"ts": 25, "dialogue": 55, "shot": 30, "direction": 50, "ref": 30}
+    col_widths = {"time": 20, "action": 55, "dialogue": 55, "shot": 30, "ref": 30}
+    headers = ["Time", "Action / Direction", "Dialogue / Text", "Shot Type", "Reference"]
 
-    # Draw Header
-    pdf.set_font('DejaVu', 'B', 9)
-    for header, width in zip(["Timestamp", "Dialogue", "Shot Type", "Scene Direction", "Reference"], col_widths.values()):
-        pdf.cell(width, line_height, header, border=1, align='C')
-    pdf.ln(line_height)
+    pdf.set_font('DejaVu', 'B', 8)
+    for i, header in enumerate(headers):
+        pdf.cell(list(col_widths.values())[i], 10, header, border=1, align='C')
+    pdf.ln(10)
 
-    # Draw Rows
     pdf.set_font('DejaVu', '', 8)
     for i, shot in enumerate(shot_list):
-        # Store current y position to draw all cells in the row at the same height
         y_start = pdf.get_y()
+        time_text = f"{shot.get('start_time', 0):.1f}s - {shot.get('end_time', 0):.1f}s"
         
-        # Draw text cells, wrapping text as needed
-        pdf.multi_cell(col_widths["ts"], line_height / 1.5, shot.get("timestamp", "N/A"), border='LR', align='C')
-        x_pos = pdf.l_margin + col_widths["ts"]
+        pdf.multi_cell(col_widths["time"], 4, time_text, border='LR', align='C')
+        x_pos = pdf.l_margin + col_widths["time"]
         pdf.set_xy(x_pos, y_start)
 
-        pdf.multi_cell(col_widths["dialogue"], line_height / 1.5, shot.get("dialogue", ""), border='R', align='L')
+        pdf.multi_cell(col_widths["action"], 4, shot.get("action_description", ""), border='R', align='L')
+        x_pos += col_widths["action"]
+        pdf.set_xy(x_pos, y_start)
+
+        pdf.multi_cell(col_widths["dialogue"], 4, shot.get("dialogue_or_text", ""), border='R', align='L')
         x_pos += col_widths["dialogue"]
         pdf.set_xy(x_pos, y_start)
-
-        pdf.multi_cell(col_widths["shot"], line_height / 1.5, shot.get("shotType", ""), border='R', align='C')
-        x_pos += col_widths["shot"]
-        pdf.set_xy(x_pos, y_start)
         
-        pdf.multi_cell(col_widths["direction"], line_height / 1.5, shot.get("sceneDirection", ""), border='R', align='L')
+        pdf.multi_cell(col_widths["shot"], 4, shot.get("shotType", ""), border='R', align='C')
         
-        # Find the max y position after drawing all text cells to determine row height
         y_end = pdf.get_y()
+        row_height = y_end - y_start
 
-        # Draw the image in its cell
         if i < len(screenshot_paths):
-            x_pos += col_widths["direction"]
-            pdf.image(screenshot_paths[i], x=x_pos, y=y_start, w=col_widths["ref"], h=y_end - y_start)
+            x_pos += col_widths["shot"]
+            pdf.image(screenshot_paths[i], x=x_pos, y=y_start, w=col_widths["ref"], h=row_height)
         
-        # Draw the bottom border of the row
-        pdf.ln(0) # Go to the start of the line at the new y position
+        pdf.ln(0)
         pdf.cell(sum(col_widths.values()), 0, '', border='T')
-        pdf.ln(y_end - y_start)
+        pdf.ln(row_height)
 
     pdf.output(output_path)
     return output_path
