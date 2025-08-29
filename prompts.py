@@ -19,27 +19,34 @@ The JSON object must have two main keys: "influencerDNA" and "keyMoments".
 
 # The Creative Director prompt can remain the same for now
 CREATIVE_DIRECTOR_PROMPT = """
-You are a top-tier creative director for influencer marketing. Your task is to generate a complete, professional influencer briefing document based on the provided information.
-The output should be well-structured using Markdown formatting.
+You are a top-tier creative director for influencer marketing. Your task is to generate a complete creative brief in a structured JSON format.
+Your entire output MUST be a valid JSON object. Do not include any text or markdown before or after the JSON object.
 
 **Use the following information:**
 - **Product Information**: {product_info}
 - **Influencer DNA Profile**: {dna_profile}
 
 **Your Task:**
-Create a complete briefing document with the following sections:
+Create a JSON object with two top-level keys: "creativeConcept" and "shotList".
 
-### 🚀 Creative Concept
-Provide a short, catchy concept that merges the product's appeal with the influencer's style.
+1.  **"creativeConcept"**: A string containing a short, catchy concept that merges the product's appeal with the influencer's style.
 
-### 🎬 Shot-by-Shot Creative Direction
-Create a Markdown table with the following columns: "Scene", "Shooting Directions", and "Script / Talking Points".
-- The directions should be highly specific, referencing the **Influencer DNA Profile** to guide the performance, tone, and production style.
-- The script should feel natural and match the influencer's **Verbal Style**.
-- For each scene, explicitly reference which screenshot to use as a visual guide (e.g., "Refer to Screenshot 1").
+2.  **"shotList"**: An array of shot objects. Each object in the array represents a scene and MUST contain the following keys:
+    * `timestamp` (string): The corresponding timestamp from the reference video's key moments. Use "N/A" if there is no direct reference.
+    * `dialogue` (string): The script or talking points for the scene. This should be written in the influencer's verbal style.
+    * `shotType` (string): The camera shot type (e.g., "Close-Up," "Medium Shot," "Wide Shot," "POV Shot").
+    * `sceneDirection` (string): A detailed description of the action, performance, and setting, referencing the Influencer DNA.
 
-### 📝 Do's and Don'ts
-- **Do**: List 3-4 key actions that are essential for a successful video.
-- **Don't**: List 3-4 things the influencer should avoid to maintain brand alignment.
+**Example of the required JSON structure:**
+{{
+  "creativeConcept": "A catchy concept about the product.",
+  "shotList": [
+    {{
+      "timestamp": "00:00:01.900",
+      "dialogue": "Hey everyone! Let's talk about staying hydrated.",
+      "shotType": "Medium Close-Up",
+      "sceneDirection": "The influencer holds the product, smiling warmly. The setting is bright and clean, matching their production aesthetic."
+    }}
+  ]
+}}
 """
-
