@@ -13,8 +13,11 @@ class PDF(FPDF):
         self.headers = ("Time (s)", "Action / Direction", "Dialogue / Text", "Shot Type", "Reference")
 
     def header(self):
-        self.add_font('DejaVu', 'B', FONT_PATH, uni=True)
-        self.set_font('DejaVu', 'B', 12)
+        try:
+            self.add_font('DejaVu', 'B', FONT_PATH, uni=True)
+            self.set_font('DejaVu', 'B', 12)
+        except RuntimeError:
+            self.set_font('Arial', 'B', 12)
         self.cell(0, 10, 'AI-Generated Influencer Brief', 0, 1, 'C')
         self.ln(5)
 
@@ -42,14 +45,14 @@ class PDF(FPDF):
             self.cell(self.col_widths[i], 7, header, 1, 0, 'C', 1)
         self.ln()
 
-def create_pdf_brief(product_info, brief_json, screenshot_paths, output_path="brief.pdf"):
+def create_pdf_brief(product_name, brief_json, screenshot_paths, output_path="brief.pdf"):
     pdf = PDF(orientation="P", unit="mm", format="A4")
     pdf.add_font('DejaVu', '', FONT_PATH, uni=True)
     pdf.add_font('DejaVu', 'B', FONT_PATH, uni=True)
     pdf.add_page()
 
     pdf.add_section_title("Product Information")
-    pdf.add_body_text(product_info)
+    pdf.add_body_text(product_name)
     
     pdf.add_section_title("Creative Concept")
     pdf.add_body_text(brief_json.get("creativeConcept", "N/A"))
@@ -73,7 +76,6 @@ def create_pdf_brief(product_info, brief_json, screenshot_paths, output_path="br
             shot.get("shotType", "")
         ]
         
-        # Calculate max height needed for the row
         max_height = 0
         for i_col, text in enumerate(row):
             lines = pdf.multi_cell(pdf.col_widths[i_col], 4, text, split_only=True)
@@ -84,14 +86,12 @@ def create_pdf_brief(product_info, brief_json, screenshot_paths, output_path="br
         img_height = 30
         final_row_height = max(max_height, img_height)
 
-        # Check if we need to add a new page before drawing the row
         if pdf.get_y() + final_row_height > pdf.page_break_trigger:
             pdf.add_page()
             pdf.draw_table_header()
             pdf.set_font("DejaVu", "", 8)
 
         start_y = pdf.get_y()
-        # Draw text cells with a fixed line height
         pdf.multi_cell(pdf.col_widths[0], 4, row[0], border='LR', align='C')
         pdf.set_xy(pdf.l_margin + pdf.col_widths[0], start_y)
         pdf.multi_cell(pdf.col_widths[1], 4, row[1], border='R', align='L')
@@ -100,16 +100,13 @@ def create_pdf_brief(product_info, brief_json, screenshot_paths, output_path="br
         pdf.set_xy(pdf.l_margin + pdf.col_widths[0] + pdf.col_widths[1] + pdf.col_widths[2], start_y)
         pdf.multi_cell(pdf.col_widths[3], 4, row[3], border='R', align='C')
         
-        # Draw image cell
         if i < len(screenshot_paths):
             x_pos = pdf.l_margin + sum(pdf.col_widths[:4])
             pdf.image(screenshot_paths[i], x=x_pos, y=start_y, w=pdf.col_widths[4], h=final_row_height)
         
-        # Draw border on the right of the (potentially empty) image cell
         pdf.set_xy(pdf.l_margin + sum(pdf.col_widths[:4]), start_y)
         pdf.cell(pdf.col_widths[4], final_row_height, '', border='R')
         
-        # Draw bottom border and move to next line
         pdf.set_y(start_y + final_row_height)
         pdf.cell(sum(pdf.col_widths), 0, '', border='T')
         pdf.ln()
