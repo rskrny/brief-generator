@@ -32,6 +32,8 @@ def download_video(video_url):
         print(f"An error occurred during video download: {e}")
         return None
 
+# In video_processor.py
+
 def extract_screenshots(video_path, timestamps):
     """
     Extracts screenshots from a video at specific timestamps.
@@ -45,14 +47,14 @@ def extract_screenshots(video_path, timestamps):
             (
                 ffmpeg
                 .input(video_path, ss=ts)
-                .output(screenshot_path, vframes=1, qscale_v=2)
+                # This line is updated to use the modern quality command '-q:v 2'
+                .output(screenshot_path, vframes=1, **{'q:v': 2})
                 .overwrite_output()
                 .run(quiet=True)
             )
             screenshot_paths.append(screenshot_path)
             print(f"  - Screenshot {i+1} saved to: {screenshot_path}")
         except ffmpeg.Error as e:
-            # This line is updated to provide a more detailed error
             print(f"An ffmpeg error occurred for timestamp {ts}. Stderr: {e.stderr.decode('utf8')}")
             continue
     
