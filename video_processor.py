@@ -3,6 +3,7 @@ import os
 import yt_dlp
 import ffmpeg
 import sys
+import shutil
 
 TEMP_DIR = "temp"
 if not os.path.exists(TEMP_DIR):
@@ -62,3 +63,18 @@ def extract_screenshots(video_path, timestamps):
     
     print("Screenshot extraction complete.")
     return screenshot_paths
+
+
+def cleanup_temp_dir():
+    """Remove all files and folders inside the temporary directory."""
+    if not os.path.exists(TEMP_DIR):
+        return
+    for name in os.listdir(TEMP_DIR):
+        path = os.path.join(TEMP_DIR, name)
+        try:
+            if os.path.isfile(path) or os.path.islink(path):
+                os.unlink(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
+        except Exception as e:
+            print(f"Failed to delete {path}: {e}")
