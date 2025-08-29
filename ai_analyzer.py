@@ -32,32 +32,39 @@ def get_video_analysis(api_key, video_path):
         print(f"An error occurred during AI analysis: {e}")
         return None
 
+# In ai_analyzer.py
+
 def generate_creative_brief(api_key, product_info, analysis_data, screenshot_paths):
     """
-    Generates the creative brief using Gemini's Pass 2 "Creative Director" prompt.
+    Generates the creative brief and returns a structured dictionary.
     """
     print("Starting creative brief generation...")
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name="models/gemini-1.5-pro-latest")
 
-        # Prepare the prompt with the data we've gathered
         dna_profile_str = json.dumps(analysis_data.get('influencerDNA', {}), indent=2)
         prompt = CREATIVE_DIRECTOR_PROMPT.format(
             product_info=product_info,
             dna_profile=dna_profile_str
         )
         
-        # Prepare the images to send along with the prompt
         content_parts = [prompt]
+        images = []
         for path in screenshot_paths:
-            content_parts.append(Image.open(path))
+            img = Image.open(path)
+            images.append(img)
+            content_parts.append(img)
             
         print("Generating creative brief with Gemini 1.5 Pro...")
         response = model.generate_content(content_parts)
         
+        # Clean and parse the JSON response
+        brief_json_str = response.text.strip().replace("```json", "").replace("```", "")
+        brief_data = json.loads(brief_json_str)
+        
         print("Creative brief generated successfully.")
-        return response.text
+        return brief_data
 
     except Exception as e:
         print(f"An error occurred during creative brief generation: {e}")
