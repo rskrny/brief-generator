@@ -1,6 +1,6 @@
 # app.py
 import streamlit as st
-from video_processor import download_video, extract_screenshots
+from video_processor import download_video, extract_screenshots, cleanup_temp_dir
 from ai_analyzer import get_video_analysis, generate_creative_brief
 from document_generator import create_pdf_brief
 
@@ -102,6 +102,8 @@ if st.button("Generate Brief", type="primary"):
             else:
                 st.session_state.run_complete = True  # Set to True only on full success
                 status.update(label="Workflow complete!", state="complete", expanded=False)
+            finally:
+                cleanup_temp_dir()
 
 if st.session_state.run_complete:
     st.header("Step 2: Download Your Brief")
