@@ -9,12 +9,11 @@ The JSON object must have two main keys: "influencerDNA" and "keyMoments".
 
 1.  **influencerDNA**: A comprehensive profile of the creator's style. (Persona, ToneVibe, VerbalStyle, ProductionAesthetic).
 
-2.  **keyMoments**: You are REQUIRED to identify **exactly 4 distinct moments**. You MUST NOT return an empty list. For each moment, provide:
-    * **timestamp**: The exact start time. **CRITICAL: The timestamp MUST be in the full "HH:MM:SS.ms" format.** For example, 5.5 seconds must be formatted as "00:00:05.500". A time of 0.66 seconds must be "00:00:00.660".
-    * **description**: A brief explanation of what is happening.
-    * **category**: One of ["Opener", "Product Shot", "User Interaction", "Unique Style", "Call to Action"].
-
-    Prioritize finding at least one 'Product Shot' and one 'User Interaction' if they exist.
+2.  **keyMoments**: You are REQUIRED to identify **exactly 4 distinct moments**. You MUST NOT return an empty list.
+    * For each moment, you must provide a `timestamp`, a `description`, and a `category`.
+    * **CRITICAL INSTRUCTION:** The 4 moments you select MUST be from different parts of the video (e.g., one from the beginning, two from the middle, one from the end) and show **visibly different actions or compositions**. Do not select multiple timestamps that correspond to the same continuous action. Failure to provide 4 visually distinct moments will result in a poor quality score.
+    * **CRITICAL FORMATTING:** The timestamp MUST be in the full "HH:MM:SS.ms" format. For example, 5.5 seconds must be formatted as "00:00:05.500".
+    * The `category` must be ONE of: ["Opener", "Product Shot", "User Interaction", "Unique Style", "Call to Action"].
 """
 
 # The Creative Director prompt can remain the same for now
@@ -50,3 +49,4 @@ Create a JSON object with two top-level keys: "creativeConcept" and "shotList".
   ]
 }}
 """
+
