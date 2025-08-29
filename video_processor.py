@@ -4,18 +4,7 @@ import yt_dlp
 import ffmpeg
 import sys
 
-# --- UPDATED SECTION ---
-# Get the base path for PyInstaller or local execution
-base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-
-# Define platform-agnostic paths to our local executables
-# We remove the .exe so it works on both Windows and Linux
-TEMP_DIR = os.path.join(base_path, "temp")
-FFMPEG_PATH = os.path.join(base_path, "bin", "ffmpeg")
-YT_DLP_PATH = os.path.join(base_path, "bin", "yt-dlp")
-# --- END UPDATED SECTION ---
-
-
+TEMP_DIR = "temp"
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
 
@@ -32,8 +21,6 @@ def download_video(video_url):
             'quiet': True,
             'merge_output_format': 'mp4',
             'overwrites': True,
-            'ffmpeg_location': FFMPEG_PATH,
-            # yt-dlp library now uses an internal exe, so yt_dlp_path is not needed
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
@@ -55,12 +42,14 @@ def extract_screenshots(video_path, timestamps):
     for i, ts in enumerate(timestamps):
         screenshot_path = os.path.join(TEMP_DIR, f'screenshot_{i+1}.jpg')
         try:
+            # We no longer need to specify the command path.
+            # The library will find the system-installed ffmpeg automatically.
             (
                 ffmpeg
                 .input(video_path, ss=ts)
                 .output(screenshot_path, vframes=1, qscale_v=2)
                 .overwrite_output()
-                .run(cmd=FFMPEG_PATH, quiet=True)
+                .run(quiet=True)
             )
             screenshot_paths.append(screenshot_path)
             print(f"  - Screenshot {i+1} saved to: {screenshot_path}")
