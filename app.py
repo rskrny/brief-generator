@@ -1,7 +1,5 @@
 # app.py
-# Streamlit application for the "Analyzer → Script Generator" pipeline
-# Gemini-only implementation (google-generativeai).
-# Uses prompts.py to build prompts and document_generator.py to export a Markdown brief.
+# Brief Generator — Director Mode (Gemini only) with robust GOOGLE_API_KEY detection + diagnostics
 
 import os
 import json
@@ -22,30 +20,64 @@ from document_generator import brief_from_json_strings
 
 
 # =========================
-# Gemini helpers
+# Robust key loading
 # =========================
+def _normalize_key(val: Optional[str]) -> Optional[str]:
+    """Trim whitespace and surrounding quotes if present."""
+    if not val:
+        return None
+    v = str(val).strip()
+    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+        v = v[1:-1].strip()
+    return v or None
+
+
 def _get_google_api_key() -> Optional[str]:
-    """Return GOOGLE_API_KEY from env or streamlit secrets."""
-    key = os.getenv("GOOGLE_API_KEY")
-    if not key and hasattr(st, "secrets"):
-        key = st.secrets.get("GOOGLE_API_KEY", None)  # type: ignore[attr-defined]
-    return key
+    """
+    Return GOOGLE_API_KEY from Streamlit secrets or environment.
+    Handles common mistakes (different casing, quotes, leading/trailing spaces).
+    """
+    # Try Streamlit secrets first (Streamlit Cloud prefers this)
+    key_candidates = []
+    try:
+        # exact name
+        key_candidates.append(st.secrets.get("GOOGLE_API_KEY", None))  # type: ignore[attr-defined]
+        # common variants (users sometimes use lowercase)
+        key_candidates.append(st.secrets.get("google_api_key", None))  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    # Then environment
+    key_candidates.append(os.getenv("GOOGLE_API_KEY"))
+    key_candidates.append(os.getenv("google_api_key"))
+
+    # Normalize and return the first non-empty
+    for k in key_candidates:
+        k = _normalize_key(k)
+        if k:
+            return k
+    return None
 
 
 def _ensure_gemini_configured():
     key = _get_google_api_key()
     if not key:
         raise RuntimeError(
-            "GOOGLE_API_KEY not set. Use environment variable or .streamlit/secrets.toml"
+            "GOOGLE_API_KEY not found.\n"
+            "Set it via .streamlit/secrets.toml or environment.\n\n"
+            "• .streamlit/secrets.toml example:\n"
+            '  GOOGLE_API_KEY = "sk-your-gemini-key"\n\n'
+            "• macOS/Linux terminal example:\n"
+            '  export GOOGLE_API_KEY="sk-your-gemini-key"\n\n'
+            "• Windows PowerShell (current session):\n"
+            '  $env:GOOGLE_API_KEY = "sk-your-gemini-key"\n'
+            "  (and run a NEW terminal if you used:  setx GOOGLE_API_KEY \"...\" )"
         )
     genai.configure(api_key=key)
 
 
 def _messages_to_single_prompt(messages: List[Dict[str, str]]) -> str:
-    """
-    Convert OpenAI-style messages into a single Gemini prompt string.
-    We keep role markers so system intent isn't lost.
-    """
+    """Convert OpenAI-style messages into a single Gemini prompt string."""
     parts = []
     for m in messages:
         role = m.get("role", "user")
@@ -54,12 +86,9 @@ def _messages_to_single_prompt(messages: List[Dict[str, str]]) -> str:
     return "\n".join(parts).strip()
 
 
-def call_gemini_json(messages: List[Dict[str, str]], model: str = "gemini-1.5-pro", temperature: float = 0.2,
-                     max_retries: int = 3, retry_base: float = 1.5) -> str:
-    """
-    Calls Gemini with a single text prompt and requests JSON output.
-    Returns a JSON string (model is instructed to output JSON only).
-    """
+def call_gemini_json(messages: List[Dict[str, str]], model: str = "gemini-1.5-pro",
+                     temperature: float = 0.2, max_retries: int = 3, retry_base: float = 1.5) -> str:
+    """Calls Gemini and returns a JSON string (we request application/json)."""
     _ensure_gemini_configured()
     prompt_text = _messages_to_single_prompt(messages)
     last_err = None
@@ -68,12 +97,8 @@ def call_gemini_json(messages: List[Dict[str, str]], model: str = "gemini-1.5-pr
             mdl = genai.GenerativeModel(model)
             resp = mdl.generate_content(
                 prompt_text,
-                generation_config={
-                    "temperature": temperature,
-                    "response_mime_type": "application/json"
-                }
+                generation_config={"temperature": temperature, "response_mime_type": "application/json"}
             )
-            # google-generativeai returns .text for textual content
             return resp.text or "{}"
         except Exception as e:
             last_err = e
@@ -90,10 +115,8 @@ st.title("🎬 Brief Generator — Director Mode (Gemini Only)")
 with st.sidebar:
     st.header("Gemini Settings")
     model = st.selectbox(
-        "Gemini Model",
-        options=["gemini-1.5-flash", "gemini-1.5-pro"],
-        index=1,
-        help="Model outputs JSON (we enforce application/json)."
+        "Gemini Model", ["gemini-1.5-flash", "gemini-1.5-pro"], index=1,
+        help="Model outputs JSON (enforced via application/json)."
     )
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
 
@@ -109,6 +132,33 @@ with st.sidebar:
     tone = st.text_input("Tone", value="conversational, direct, confident; no hype; no cringe")
     must_include = st.text_area("Must include (one per line)", value="")
     avoid_words = st.text_area("Avoid words (one per line)", value="insane\nultimate\nbest ever")
+
+# ===== Diagnostics (so you can see what's wrong immediately) =====
+with st.expander("🔧 Diagnostics (API Key)", expanded=False):
+    try:
+        # Show where the app *thinks* it is running from and if it sees a key (masked)
+        cwd = os.getcwd()
+        key = _get_google_api_key()
+        masked = (key[:4] + "…" + key[-4:]) if key and len(key) >= 8 else ("(present)" if key else "(not found)")
+        st.write("Working directory:", cwd)
+        st.write("GOOGLE_API_KEY visible?", bool(key))
+        st.write("Key (masked):", masked)
+        st.caption("If (not found): ensure `.streamlit/secrets.toml` lives at the project root, or set the environment variable before launching Streamlit.")
+    except Exception as e:
+        st.error(f"Diagnostics error: {e}")
+
+with st.expander("🧪 Test Gemini connection", expanded=False):
+    if st.button("Run test completion"):
+        try:
+            _ensure_gemini_configured()
+            mdl = genai.GenerativeModel(model)
+            resp = mdl.generate_content(
+                "Return JSON only: {\"ok\": true, \"msg\": \"gemini connected\"}",
+                generation_config={"response_mime_type": "application/json"}
+            )
+            st.success(f"Response: {resp.text}")
+        except Exception as e:
+            st.error(f"Test failed: {e}")
 
 st.markdown(
     "This app runs a two-step pipeline: **Analyzer** → **Script Generator**. "
