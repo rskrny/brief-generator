@@ -1,6 +1,7 @@
 # app.py
 # Streamlit application for the "Analyzer → Script Generator" pipeline
-# using the new prompt builders and validators from prompts.py
+# using prompt builders/validators from prompts.py
+# and Markdown brief export from document_generator.py
 
 import os
 import json
@@ -24,9 +25,9 @@ from prompts import (
     build_script_generator_messages,
     validate_analyzer_json,
     validate_script_json,
-    default_product_facts,
-    default_brand_voice,
 )
+from document_generator import brief_from_json_strings
+
 
 # =========================
 # Utility: OpenAI wrapper
@@ -37,7 +38,10 @@ def get_openai_client() -> Optional["OpenAI"]:
     """
     if not _OPENAI_AVAILABLE:
         return None
-    api_key = os.getenv("OPENAI_API_KEY", None) or st.secrets.get("OPENAI_API_KEY", None) if hasattr(st, "secrets") else None
+    api_key = (
+        os.getenv("OPENAI_API_KEY", None)
+        or (st.secrets.get("OPENAI_API_KEY", None) if hasattr(st, "secrets") else None)
+    )
     if not api_key:
         return None
     try:
@@ -188,7 +192,7 @@ product_facts = {
 }
 
 # =========================
-# Actions
+# Actions & State
 # =========================
 st.markdown("---")
 analyze_col, script_col = st.columns([1, 1])
@@ -306,7 +310,30 @@ with outB:
     else:
         st.info("Generate the script to see results here.")
 
+# =========================
+# Export Brief (Markdown)
+# =========================
+st.markdown("---")
+st.subheader("📄 Export Brief (Markdown)")
+if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]:
+    md = brief_from_json_strings(
+        analyzer_json_str=st.session_state["analyzer_json_str"],
+        script_json_str=st.session_state["script_json_str"],
+        product_facts=product_facts,
+        title="AI-Generated Influencer Brief (Director Mode)"
+    )
+    st.download_button(
+        "⬇️ Download brief.md",
+        data=md.encode("utf-8"),
+        file_name="brief.md",
+        mime="text/markdown"
+    )
+    with st.expander("Preview Markdown", expanded=False):
+        st.markdown(md)
+else:
+    st.info("Run Analyzer and Script to export a brief.")
+
 st.caption(
-    "Tip: keep transcripts/SRT accurate and add OCR keyframes for better on-screen text capture "
-    "and edit beat detection. Then map the Script JSON to your storyboard exporter."
+    "Tip: add accurate transcripts/SRT and OCR keyframes for better on-screen text capture "
+    "and edit beat detection. Then use the Markdown brief for storyboard/PDF."
 )
