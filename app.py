@@ -1,25 +1,17 @@
 # app.py
 # Streamlit application for the "Analyzer → Script Generator" pipeline
-# using prompt builders/validators from prompts.py
-# and Markdown brief export from document_generator.py
+# Gemini-only implementation (google-generativeai).
+# Uses prompts.py to build prompts and document_generator.py to export a Markdown brief.
 
 import os
 import json
 import time
 import traceback
-from typing import Optional
+from typing import Optional, List, Dict
 
 import streamlit as st
+import google.generativeai as genai
 
-# ---- LLM client (OpenAI) ----
-# Works with openai>=1.0.0 SDK. Set OPENAI_API_KEY in your env or .streamlit/secrets.toml
-try:
-    from openai import OpenAI
-    _OPENAI_AVAILABLE = True
-except Exception:
-    _OPENAI_AVAILABLE = False
-
-# ---- Local imports ----
 from prompts import (
     build_analyzer_messages,
     build_script_generator_messages,
@@ -30,70 +22,78 @@ from document_generator import brief_from_json_strings
 
 
 # =========================
-# Utility: OpenAI wrapper
+# Gemini helpers
 # =========================
-def get_openai_client() -> Optional["OpenAI"]:
-    """
-    Returns an OpenAI client if the SDK is installed and key present, else None.
-    """
-    if not _OPENAI_AVAILABLE:
-        return None
-    api_key = (
-        os.getenv("OPENAI_API_KEY", None)
-        or (st.secrets.get("OPENAI_API_KEY", None) if hasattr(st, "secrets") else None)
-    )
-    if not api_key:
-        return None
-    try:
-        client = OpenAI(api_key=api_key)
-        return client
-    except Exception:
-        return None
+def _get_google_api_key() -> Optional[str]:
+    """Return GOOGLE_API_KEY from env or streamlit secrets."""
+    key = os.getenv("GOOGLE_API_KEY")
+    if not key and hasattr(st, "secrets"):
+        key = st.secrets.get("GOOGLE_API_KEY", None)  # type: ignore[attr-defined]
+    return key
 
 
-def call_openai_json(messages, model="gpt-4o-mini", temperature=0.2, max_retries=3, retry_base=1.5) -> str:
-    """
-    Calls OpenAI chat completions API, returning message.content as JSON string.
-    Enforces JSON mode via response_format={"type": "json_object"}.
-    """
-    client = get_openai_client()
-    if client is None:
-        raise RuntimeError("OpenAI client not available. Install 'openai' and set OPENAI_API_KEY.")
+def _ensure_gemini_configured():
+    key = _get_google_api_key()
+    if not key:
+        raise RuntimeError(
+            "GOOGLE_API_KEY not set. Use environment variable or .streamlit/secrets.toml"
+        )
+    genai.configure(api_key=key)
 
+
+def _messages_to_single_prompt(messages: List[Dict[str, str]]) -> str:
+    """
+    Convert OpenAI-style messages into a single Gemini prompt string.
+    We keep role markers so system intent isn't lost.
+    """
+    parts = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        parts.append(f"[{role.upper()}]\n{content}\n")
+    return "\n".join(parts).strip()
+
+
+def call_gemini_json(messages: List[Dict[str, str]], model: str = "gemini-1.5-pro", temperature: float = 0.2,
+                     max_retries: int = 3, retry_base: float = 1.5) -> str:
+    """
+    Calls Gemini with a single text prompt and requests JSON output.
+    Returns a JSON string (model is instructed to output JSON only).
+    """
+    _ensure_gemini_configured()
+    prompt_text = _messages_to_single_prompt(messages)
     last_err = None
     for i in range(max_retries):
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                response_format={"type": "json_object"},
+            mdl = genai.GenerativeModel(model)
+            resp = mdl.generate_content(
+                prompt_text,
+                generation_config={
+                    "temperature": temperature,
+                    "response_mime_type": "application/json"
+                }
             )
-            return resp.choices[0].message.content
+            # google-generativeai returns .text for textual content
+            return resp.text or "{}"
         except Exception as e:
             last_err = e
             time.sleep(retry_base * (i + 1))
-    raise RuntimeError(f"LLM call failed after {max_retries} retries: {last_err}")
+    raise RuntimeError(f"Gemini call failed after {max_retries} retries: {last_err}")
 
 
 # =========================
 # Streamlit UI
 # =========================
-st.set_page_config(page_title="Brief Generator (Director Mode)", layout="wide")
-st.title("🎬 Brief Generator — Director Mode")
+st.set_page_config(page_title="Brief Generator (Director Mode, Gemini)", layout="wide")
+st.title("🎬 Brief Generator — Director Mode (Gemini Only)")
 
 with st.sidebar:
-    st.header("LLM Settings")
+    st.header("Gemini Settings")
     model = st.selectbox(
-        "OpenAI Model",
-        options=[
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4.1-mini",
-            "gpt-4.1",
-        ],
-        index=0,
-        help="Uses JSON response mode automatically."
+        "Gemini Model",
+        options=["gemini-1.5-flash", "gemini-1.5-pro"],
+        index=1,
+        help="Model outputs JSON (we enforce application/json)."
     )
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
 
@@ -221,12 +221,11 @@ with analyze_col:
                 fps_estimate=(int(fps_hint) if fps_hint else None),
             )
 
-            with st.spinner("Analyzing reference video like a director…"):
-                analyzer_json_str = call_openai_json(
+            with st.spinner("Analyzing reference video like a director (Gemini)…"):
+                analyzer_json_str = call_gemini_json(
                     messages=messages, model=model, temperature=temperature
                 )
 
-            # Parse + validate
             analyzer_parsed = json.loads(analyzer_json_str)
             errs = validate_analyzer_json(analyzer_parsed)
 
@@ -258,8 +257,8 @@ with script_col:
                     cta_variants=cta_variants or None
                 )
 
-                with st.spinner("Authoring brand-safe, scene-by-scene script…"):
-                    script_json_str = call_openai_json(
+                with st.spinner("Authoring brand-safe, scene-by-scene script (Gemini)…"):
+                    script_json_str = call_gemini_json(
                         messages=messages, model=model, temperature=temperature
                     )
 
