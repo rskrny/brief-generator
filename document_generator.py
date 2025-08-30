@@ -1,122 +1,373 @@
 # document_generator.py
-import os
-from fpdf import FPDF
-import sys
-import logging
+# Converts Analyzer JSON + Script JSON + Product Facts into a director-grade Markdown brief.
+# No external deps required. You can display the Markdown in Streamlit (st.markdown)
+# or offer it as a downloadable .md file. If you later add a PDF pipeline, convert
+# this Markdown to PDF with your preferred library.
 
-logger = logging.getLogger(__name__)
+from __future__ import annotations
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FONT_PATH = os.path.join(SCRIPT_DIR, 'fonts', 'DejaVuSans.ttf')
+from typing import Dict, Any, List, Optional
+import json
+import textwrap
 
-class PDF(FPDF):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.col_widths = (20, 55, 55, 30, 30)
-        self.headers = ("Time (s)", "Action / Direction", "Dialogue / Text", "Shot Type", "Reference")
 
-    def header(self):
-        try:
-            self.add_font('DejaVu', 'B', FONT_PATH, uni=True)
-            self.set_font('DejaVu', 'B', 12)
-        except RuntimeError:
-            self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'AI-Generated Influencer Brief', 0, 1, 'C')
-        self.ln(5)
+# =========================
+# Public API
+# =========================
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+def make_brief_markdown(
+    *,
+    analyzer: Dict[str, Any],
+    script: Dict[str, Any],
+    product_facts: Dict[str, Any],
+    title: str = "AI-Generated Influencer Brief"
+) -> str:
+    """
+    Build a single Markdown document summarizing the reference video analysis and
+    the newly generated script for the target brand/product.
 
-    def add_section_title(self, title):
-        self.set_font('DejaVu', 'B', 14)
-        safe_title = title.encode('latin-1', 'replace').decode('latin-1')
-        self.cell(0, 10, safe_title, 0, 1, 'L')
-        self.ln(4)
+    Required keys:
+      analyzer: Analyzer JSON (as parsed dict, not string)
+      script:   Script JSON (as parsed dict, not string)
+      product_facts: dict with keys like brand, product_name, approved_claims, forbidden, required_disclaimers
 
-    def add_body_text(self, text):
-        self.set_font('DejaVu', '', 12)
-        safe_text = str(text).encode('latin-1', 'replace').decode('latin-1')
-        self.multi_cell(0, 8, safe_text)
-        self.ln()
-    
-    def draw_table_header(self):
-        self.set_font("DejaVu", "B", 8)
-        self.set_fill_color(230, 230, 230)
-        for i, header in enumerate(self.headers):
-            self.cell(self.col_widths[i], 7, header, 1, 0, 'C', 1)
-        self.ln()
+    Returns a Markdown string.
+    """
+    lines: List[str] = []
 
-def create_pdf_brief(product_name, brief_json, screenshot_paths, output_path="brief.pdf"):
-    pdf = PDF(orientation="P", unit="mm", format="A4")
-    pdf.add_font('DejaVu', '', FONT_PATH, uni=True)
-    pdf.add_font('DejaVu', 'B', FONT_PATH, uni=True)
-    pdf.add_page()
+    # Header
+    brand = product_facts.get("brand") or ""
+    product = product_facts.get("product_name") or ""
+    lines.append(f"# {title}")
+    if brand or product:
+        lines.append(f"**Product**: {brand} {product}".strip())
+    lines.append("")
 
-    pdf.add_section_title("Product Information")
-    pdf.add_body_text(product_name)
-    
-    pdf.add_section_title("Creative Concept")
-    pdf.add_body_text(brief_json.get("creativeConcept", "N/A"))
-    
-    pdf.add_section_title("Shot-by-Shot Timeline")
-    
-    shot_list = brief_json.get("shotList")
-    if not shot_list:
-        pdf.add_body_text("No shot list was generated.")
-        pdf.output(output_path)
-        return output_path
+    # Product facts (claims whitelist)
+    lines.append("## Product Facts (Claims Whitelist)")
+    _append_list(lines, product_facts.get("approved_claims", []), bullet="- ")
+    if product_facts.get("required_disclaimers"):
+        lines.append("")
+        lines.append("**Required Disclaimers**")
+        _append_list(lines, product_facts.get("required_disclaimers", []), bullet="- ")
+    if product_facts.get("forbidden"):
+        lines.append("")
+        lines.append("**Forbidden / Restricted Claims**")
+        _append_list(lines, product_facts.get("forbidden", []), bullet="- ")
+    lines.append("")
 
-    pdf.draw_table_header()
-    pdf.set_font("DejaVu", "", 8)
+    # Analyzer summary
+    lines.append("## Reference Video — Director Breakdown")
+    lines.extend(_analyzer_global_summary(analyzer))
+    lines.append("")
+    lines.extend(_influencer_dna_summary(analyzer))
+    lines.append("")
+    lines.extend(_edit_grammar_summary(analyzer))
+    lines.append("")
+    lines.extend(_beats_table(analyzer))
+    lines.append("")
+    lines.extend(_scenes_table(analyzer))
+    lines.append("")
 
-    for i, shot in enumerate(shot_list):
-        row = [
-            f"{shot.get('start_time', 0):.1f}s - {shot.get('end_time', 0):.1f}s",
-            shot.get("action_description", ""),
-            shot.get("dialogue_or_text", ""),
-            shot.get("shot_type") or shot.get("shotType", "")
-        ]
-        
-        max_height = 0
-        for i_col, text in enumerate(row):
-            lines = pdf.multi_cell(pdf.col_widths[i_col], 4, text, split_only=True)
-            text_height = len(lines) * 4
-            if text_height > max_height:
-                max_height = text_height
-        
-        img_height = 30
-        final_row_height = max(max_height, img_height)
+    # Script plan
+    lines.append("## New Script for Target Brand/Product")
+    lines.extend(_script_opening(script))
+    lines.append("")
+    lines.extend(_script_scenes_table(script))
+    lines.append("")
+    lines.extend(_cta_options(script))
+    lines.append("")
 
-        if pdf.get_y() + final_row_height > pdf.page_break_trigger:
-            pdf.add_page()
-            pdf.draw_table_header()
-            pdf.set_font("DejaVu", "", 8)
+    # Quality checklist & compliance
+    lines.append("## Quality Checklist & Compliance")
+    lines.extend(_script_checklist(script))
+    lines.append("")
+    lines.extend(_compliance_block(analyzer, product_facts))
+    lines.append("")
 
-        start_y = pdf.get_y()
-        pdf.multi_cell(pdf.col_widths[0], 4, row[0], border='LR', align='C')
-        pdf.set_xy(pdf.l_margin + pdf.col_widths[0], start_y)
-        pdf.multi_cell(pdf.col_widths[1], 4, row[1], border='R', align='L')
-        pdf.set_xy(pdf.l_margin + pdf.col_widths[0] + pdf.col_widths[1], start_y)
-        pdf.multi_cell(pdf.col_widths[2], 4, row[2], border='R', align='L')
-        pdf.set_xy(pdf.l_margin + pdf.col_widths[0] + pdf.col_widths[1] + pdf.col_widths[2], start_y)
-        pdf.multi_cell(pdf.col_widths[3], 4, row[3], border='R', align='C')
-        
-        if i < len(screenshot_paths):
-            img_path = screenshot_paths[i]
-            if img_path and os.path.isfile(img_path):
-                x_pos = pdf.l_margin + sum(pdf.col_widths[:4])
-                pdf.image(img_path, x=x_pos, y=start_y, w=pdf.col_widths[4], h=final_row_height)
-            else:
-                logger.warning(f"Missing screenshot at index {i}: {img_path}")
+    return "\n".join(lines)
 
-        pdf.set_xy(pdf.l_margin + sum(pdf.col_widths[:4]), start_y)
-        pdf.cell(pdf.col_widths[4], final_row_height, '', border='R')
-        
-        pdf.set_y(start_y + final_row_height)
-        pdf.cell(sum(pdf.col_widths), 0, '', border='T')
-        pdf.ln()
 
-    pdf.output(output_path)
-    
+# =========================
+# Analyzer helpers
+# =========================
+
+def _analyzer_global_summary(analyzer: Dict[str, Any]) -> List[str]:
+    vm = analyzer.get("video_metadata", {})
+    gs = analyzer.get("global_style", {})
+    music = gs.get("music", {})
+    duration = _num(vm.get("duration_s"))
+    hook_types = gs.get("hook_type", [])
+    promise = gs.get("promise", "")
+    payoff = gs.get("payoff", "")
+    cta_core = gs.get("cta_core", "")
+    risk_flags = gs.get("risk_flags", [])
+
+    lines = [
+        "**Platform**: " + str(vm.get("platform", "")),
+        f"**Duration**: {duration:.2f}s" if duration is not None else "**Duration**: (unknown)",
+        "**Aspect Ratio**: " + str(vm.get("aspect_ratio", "")),
+        "",
+        "**Hook Type(s)**: " + ", ".join(hook_types) if hook_types else "**Hook Type(s)**: (none)",
+        "**Promise**: " + (promise or "(none)"),
+        "**Payoff**: " + (payoff or "(none)"),
+        "**Core CTA**: " + (cta_core or "(none)"),
+        "",
+        "**Music**: " + ", ".join([x for x in [music.get("genre"), f"{music.get('bpm','') or ''} BPM"] if x and str(x).strip()]),
+    ]
+    if risk_flags:
+        lines.append("**Risk Flags**: " + ", ".join(risk_flags))
+    return lines
+
+
+def _influencer_dna_summary(analyzer: Dict[str, Any]) -> List[str]:
+    dna = analyzer.get("influencer_DNA", {})
+    delivery = dna.get("delivery", {})
+    editing = dna.get("editing_style", {})
+
+    lines = ["### Influencer DNA (Delivery Fingerprint)"]
+    lines.append("**Persona Tags**: " + ", ".join(dna.get("persona_tags", [])) if dna.get("persona_tags") else "**Persona Tags**: (none)")
+    lines.append(f"**Energy**: {dna.get('energy_1to5', '(unknown)')}/5")
+    lines.append("**Pace**: " + str(dna.get("pace", "")))
+    if dna.get("sentiment_arc"):
+        lines.append("**Sentiment Arc**: " + " → ".join(dna.get("sentiment_arc", [])))
+    lines.append("**POV**: " + str(delivery.get("POV", "")))
+    lines.append(f"**Eye Contact**: {delivery.get('eye_contact_pct','?')}%")
+    if delivery.get("rhetoric"):
+        lines.append("**Rhetorical Devices**: " + ", ".join(delivery.get("rhetoric", [])))
+    if editing:
+        lines.append("**Editing Style**: " + ", ".join([editing.get("cuts",""), editing.get("text_style",""), "anim:"+",".join(editing.get("anim", []))]).strip(", "))
+    return lines
+
+
+def _edit_grammar_summary(analyzer: Dict[str, Any]) -> List[str]:
+    eg = (analyzer.get("global_style") or {}).get("edit_grammar") or {}
+    lines = ["### Edit Grammar & Rhythm"]
+    lines.append(f"**Average Cut Interval**: {eg.get('avg_cut_interval_s','?')}s")
+    if eg.get("transition_types"):
+        lines.append("**Transitions**: " + ", ".join(eg.get("transition_types")))
+    lines.append(f"**B-roll Ratio**: {eg.get('broll_ratio','?')}")
+    lines.append(f"**Overlay Density (per 10s)**: {eg.get('overlay_density_per_10s','?')}")
+    return lines
+
+
+def _beats_table(analyzer: Dict[str, Any]) -> List[str]:
+    beats = analyzer.get("beats", []) or []
+    lines = ["### Beat Grid", "", "| t (s) | type | note |", "|---:|---|---|"]
+    for b in beats:
+        t = _num(b.get("t"))
+        lines.append(f"| {t:.2f} | {b.get('type','')} | {b.get('note','')} |" if t is not None else f"|  | {b.get('type','')} | {b.get('note','')} |")
+    if len(beats) == 0:
+        lines.append("> No beats detected.")
+    return lines
+
+
+def _scenes_table(analyzer: Dict[str, Any]) -> List[str]:
+    scenes = analyzer.get("scenes", []) or []
+    lines = [
+        "### Scene-by-Scene (Reference Video)",
+        "",
+        "| # | start–end (s) | shot | camera | framing | action | dialogue/VO | on-screen text | SFX | transition | retention |",
+        "|---:|---|---|---|---|---|---|---|---|---|"
+    ]
+    for s in scenes:
+        start = _num(s.get("start_s"))
+        end = _num(s.get("end_s"))
+        dur = f"{start:.2f}–{end:.2f}" if start is not None and end is not None else "–"
+        ontext = "; ".join([_osd_str(x) for x in s.get("on_screen_text", [])]) if s.get("on_screen_text") else ""
+        retention = ", ".join(s.get("retention_device", []) or [])
+        lines.append("| {idx} | {dur} | {shot} | {cam} | {frame} | {act} | {dlg} | {txt} | {sfx} | {tr} | {ret} |".format(
+            idx=s.get("idx",""),
+            dur=dur,
+            shot=_safe(s.get("shot","")),
+            cam=_safe(s.get("camera","")),
+            frame=_safe(s.get("framing","")),
+            act=_safe(s.get("action","")),
+            dlg=_safe(s.get("dialogue_vo","")),
+            txt=_safe(ontext),
+            sfx=_safe(", ".join(s.get("sfx",[]) or [])),
+            tr=_safe(s.get("transition_out","")),
+            ret=_safe(retention),
+        ))
+    if len(scenes) == 0:
+        lines.append("> No scenes provided.")
+    return lines
+
+
+# =========================
+# Script helpers
+# =========================
+
+def _script_opening(script: Dict[str, Any]) -> List[str]:
+    s = script.get("script", {})
+    opening = s.get("opening_hook", {}) or {}
+    start = _num(opening.get("start_s"))
+    end = _num(opening.get("end_s"))
+    when = f"{start:.2f}–{end:.2f}s" if start is not None and end is not None else "0–?"
+    ontext = "; ".join([_osd_str(x) for x in opening.get("on_screen_text", [])]) if opening.get("on_screen_text") else ""
+
+    lines = ["### Opening Hook (Target Script)"]
+    lines.append(f"**Timing**: {when}")
+    lines.append("**Dialogue/VO**: " + (opening.get("dialogue","") or "(none)"))
+    lines.append("**Visual**: " + (opening.get("visual","") or "(none)"))
+    lines.append("**On-screen text**: " + (ontext or "(none)"))
+    if opening.get("retention_device"):
+        lines.append("**Retention Devices**: " + ", ".join(opening.get("retention_device", [])))
+    return lines
+
+
+def _script_scenes_table(script: Dict[str, Any]) -> List[str]:
+    s = script.get("script", {})
+    scenes = s.get("scenes", []) or []
+    lines = [
+        "### Scene-by-Scene (Target Script)",
+        "",
+        "| # | start–end (s) | shot | camera | framing | action | dialogue/VO | on-screen text | SFX | transition | retention | product focus |",
+        "|---:|---|---|---|---|---|---|---|---|---|---|"
+    ]
+    for sc in scenes:
+        start = _num(sc.get("start_s"))
+        end = _num(sc.get("end_s"))
+        dur = f"{start:.2f}–{end:.2f}" if start is not None and end is not None else "–"
+        ontext = "; ".join([_osd_str(x) for x in sc.get("on_screen_text", [])]) if sc.get("on_screen_text") else ""
+        retention = ", ".join(sc.get("retention_device", []) or [])
+        lines.append("| {idx} | {dur} | {shot} | {cam} | {frame} | {act} | {dlg} | {txt} | {sfx} | {tr} | {ret} | {pf} |".format(
+            idx=sc.get("idx",""),
+            dur=dur,
+            shot=_safe(sc.get("shot","")),
+            cam=_safe(sc.get("camera","")),
+            frame=_safe(sc.get("framing","")),
+            act=_safe(sc.get("action","")),
+            dlg=_safe(sc.get("dialogue_vo","")),
+            txt=_safe(ontext),
+            sfx=_safe(", ".join(sc.get("sfx",[]) or [])),
+            tr=_safe(sc.get("transition_out","")),
+            ret=_safe(retention),
+            pf=_safe(sc.get("product_focus","")),
+        ))
+    if len(scenes) == 0:
+        lines.append("> No scenes provided.")
+    return lines
+
+
+def _cta_options(script: Dict[str, Any]) -> List[str]:
+    s = script.get("script", {})
+    ctas = s.get("cta_options", []) or []
+    lines = ["### CTA Variants"]
+    if not ctas:
+        lines.append("> No CTA options provided.")
+        return lines
+    for c in ctas:
+        variant = c.get("variant", "")
+        lines.append(f"**Variant {variant}**")
+        lines.append("- Dialogue/VO: " + (c.get("dialogue","") or "(none)"))
+        if c.get("on_screen_text"):
+            ontext = "; ".join([_osd_str(x) for x in c.get("on_screen_text", [])])
+            lines.append("- On-screen text: " + ontext)
+        lines.append("- Visual: " + (c.get("visual","") or "(none)"))
+        lines.append("- Transition: " + (c.get("transition","") or "(none)"))
+        lines.append("")
+    return lines
+
+
+def _script_checklist(script: Dict[str, Any]) -> List[str]:
+    chk = script.get("checklist", {}) or {}
+    def _yn(x: Optional[bool]) -> str:
+        return "✅" if x else "⚠️" if x is not None else "?"
+    lines = [
+        f"- Forbidden claims present: {_yn(chk.get('forbidden_claims_present') is False)}",
+        f"- Brand terms OK: {_yn(chk.get('brand_terms_ok'))}",
+        f"- Captions safe-area OK: {_yn(chk.get('captions_safe_area_ok'))}",
+    ]
+    notes = script.get("notes_for_legal", []) or []
+    if notes:
+        lines.append("")
+        lines.append("**Notes for Legal**")
+        _append_list(lines, notes, bullet="- ")
+    return lines
+
+
+def _compliance_block(analyzer: Dict[str, Any], product_facts: Dict[str, Any]) -> List[str]:
+    comp = analyzer.get("compliance", {}) or {}
+    forbidden = comp.get("forbidden_claims", []) or []
+    req = (product_facts.get("required_disclaimers") or [])[:]
+    lines = []
+    if forbidden:
+        lines.append("**Compliance — Reference Video Flags**")
+        _append_list(lines, forbidden, bullet="- ")
+    if req:
+        lines.append("")
+        lines.append("**Compliance — Required Disclaimers for Target Script**")
+        _append_list(lines, req, bullet="- ")
+    if not lines:
+        lines.append("> No additional compliance notes.")
+    return lines
+
+
+# =========================
+# Utility helpers
+# =========================
+
+def _append_list(lines: List[str], items: List[str], bullet: str = "- ") -> None:
+    for it in items:
+        if it is None:
+            continue
+        s = str(it).strip()
+        if s:
+            lines.append(f"{bullet}{s}")
+
+
+def _num(x: Any) -> Optional[float]:
+    try:
+        return float(x)
+    except Exception:
+        return None
+
+
+def _safe(x: Any) -> str:
+    return (str(x) if x is not None else "").replace("\n", " ").strip()
+
+
+def _osd_str(obj: Dict[str, Any]) -> str:
+    """
+    Render an on-screen text object {text,t_in,t_out,position,style} into a compact string.
+    """
+    if not isinstance(obj, dict):
+        return ""
+    text = obj.get("text", "")
+    t_in = obj.get("t_in", None)
+    t_out = obj.get("t_out", None)
+    pos = obj.get("position", "")
+    style = obj.get("style", "")
+    tspan = ""
+    try:
+        if t_in is not None and t_out is not None:
+            tspan = f"[{float(t_in):.2f}–{float(t_out):.2f}s] "
+    except Exception:
+        pass
+    meta = " (" + ", ".join([p for p in [pos, style] if p]) + ")" if (pos or style) else ""
+    return f"{tspan}{text}{meta}".strip()
+
+
+# =========================
+# Convenience: stringify
+# =========================
+
+def brief_from_json_strings(
+    analyzer_json_str: str,
+    script_json_str: str,
+    product_facts: Dict[str, Any],
+    title: str = "AI-Generated Influencer Brief"
+) -> str:
+    """
+    Convenience wrapper if you have raw JSON strings instead of parsed dicts.
+    """
+    try:
+        analyzer = json.loads(analyzer_json_str or "{}")
+    except Exception:
+        analyzer = {}
+    try:
+        script = json.loads(script_json_str or "{}")
+    except Exception:
+        script = {}
+    return make_brief_markdown(analyzer=analyzer, script=script, product_facts=product_facts, title=title)
