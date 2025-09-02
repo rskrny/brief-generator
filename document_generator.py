@@ -361,6 +361,9 @@ def brief_from_json_strings(
 ) -> str:
     """
     Convenience wrapper if you have raw JSON strings instead of parsed dicts.
+    `product_facts` should be a unified packet (research data preferred,
+    manual inputs as fallback) so downstream renderers receive a consistent
+    view of brand, claims, and disclaimers.
     """
     try:
         analyzer = json.loads(analyzer_json_str or "{}")
