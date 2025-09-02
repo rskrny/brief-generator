@@ -227,19 +227,18 @@ with st.expander("Advanced brand controls"):
     )
 
 # Build packets
-approved_claims = [x.strip() for x in claims_text.splitlines() if x.strip()]
-forbidden_claims = [x.strip() for x in forbidden_text.splitlines() if x.strip()] if 'forbidden_text' in locals() else []
-required_disclaimers = [x.strip() for x in (disclaimers_text.splitlines() if 'disclaimers_text' in locals() else []) if x.strip()]
+research_packet = st.session_state.get("product_research", {})
+
+# Build packets (prefer researched data, fall back to manual inputs)
+approved_claims = research_packet.get("approved_claims") or [x.strip() for x in claims_text.splitlines() if x.strip()]
+forbidden_claims = research_packet.get("forbidden") or [x.strip() for x in forbidden_text.splitlines() if x.strip()]
+required_disclaimers = research_packet.get("required_disclaimers") or [
+    x.strip() for x in (disclaimers_text.splitlines() if 'disclaimers_text' in locals() else []) if x.strip()
+]
 cta_variants = [x.strip() for x in (cta_variant_text.splitlines() if 'cta_variant_text' in locals() else []) if x.strip()]
 
-# Fallback to researched data if user didn't provide their own
-research_packet = st.session_state.get("product_research", {})
-if not approved_claims:
-    approved_claims = research_packet.get("approved_claims", [])
-if not forbidden_claims:
-    forbidden_claims = research_packet.get("forbidden", [])
-if not required_disclaimers:
-    required_disclaimers = research_packet.get("required_disclaimers", [])
+brand_value = research_packet.get("brand") or brand_name.strip()
+product_name_value = research_packet.get("product_name") or product_name.strip()
 
 brand_voice = {
     "tone": (tone if 'tone' in locals() else "conversational, direct, confident; no hype; no cringe"),
@@ -248,8 +247,8 @@ brand_voice = {
 }
 
 product_facts = {
-    "brand": brand_name.strip(),
-    "product_name": product_name.strip(),
+    "brand": brand_value,
+    "product_name": product_name_value,
     "approved_claims": approved_claims,
     "forbidden": forbidden_claims,
     "required_disclaimers": required_disclaimers,
