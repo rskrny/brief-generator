@@ -23,6 +23,8 @@ _TABLE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+\s*$")
 _IMAGE_CELL_HEIGHT = 30  # fixed height for images in table cells
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
 
+PADDING = 1  # small padding used across rendering helpers
+
 
 def _get_image_path(cell: Any) -> Optional[str]:
     """Return an image path if *cell* represents an image, otherwise ``None``."""
@@ -195,19 +197,23 @@ def make_brief_pdf(
             continue
         if line.startswith("# "):
             pdf.set_font("DejaVu", size=16)
-            _safe_multi_cell(pdf, pdf.epw, 8, line[2:].strip())
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 8, line[2:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("## "):
             pdf.set_font("DejaVu", size=14)
-            _safe_multi_cell(pdf, pdf.epw, 7, line[3:].strip())
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 7, line[3:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("### "):
             pdf.set_font("DejaVu", size=12)
-            _safe_multi_cell(pdf, pdf.epw, 6, line[4:].strip())
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 6, line[4:].strip())
         elif line.startswith("- "):
             _render_list_item(pdf, line[2:].strip())
         else:
-            _safe_multi_cell(pdf, pdf.epw, 6, line)
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 6, line)
         i += 1
 
     # ---- Render storyboard page ----
@@ -224,6 +230,7 @@ def make_brief_pdf(
             and _TABLE_SEPARATOR_RE.match(lines[i + 1])
         ):
             headers, rows, i = _parse_table_block(lines, i)
+            pdf.set_x(pdf.get_x() + PADDING / 2)
             _render_table(pdf, headers, rows)
             pdf.ln(SECTION_SPACING)
             continue
@@ -234,19 +241,23 @@ def make_brief_pdf(
             continue
         if line.startswith("# "):
             pdf.set_font("DejaVu", size=16)
-            _safe_multi_cell(pdf, pdf.epw, 8, line[2:].strip())
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 8, line[2:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("## "):
             pdf.set_font("DejaVu", size=14)
-            _safe_multi_cell(pdf, pdf.epw, 7, line[3:].strip())
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 7, line[3:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("### "):
             pdf.set_font("DejaVu", size=12)
-            _safe_multi_cell(pdf, pdf.epw, 6, line[4:].strip())
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 6, line[4:].strip())
         elif line.startswith("- "):
             _render_list_item(pdf, line[2:].strip())
         else:
-            _safe_multi_cell(pdf, pdf.epw, 6, line)
+            pdf.set_x(pdf.get_x() + PADDING / 2)
+            _safe_multi_cell(pdf, pdf.epw - PADDING, 6, line)
         i += 1
 
     pdf_bytes = pdf.output(dest="S")
@@ -278,6 +289,7 @@ def _wrap_text(pdf: FPDF, width: float, text: str) -> List[str]:
     guaranteed not to exceed *width*.
     """
 
+    width = max(width - PADDING, 0)
     try:
         x, y = pdf.get_x(), pdf.get_y()
         lines = pdf.multi_cell(width, 1, text, border=0, split_only=True)
@@ -297,7 +309,9 @@ def _safe_multi_cell(
     pdf: FPDF, width: float, line_height: float, text: str, **kwargs: Any
 ) -> None:
     """Render text using ``multi_cell`` with manual wrapping fallback."""
-
+    if width <= 0:
+        width = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
+    width = max(width - PADDING, 0)
     lines = _wrap_text(pdf, width, text)
     start_x = pdf.get_x()
     for i, line in enumerate(lines):
@@ -320,7 +334,7 @@ def _split_row_cells(
             max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
         else:
             text = "" if cell is None else str(cell)
-            lines = _wrap_text(pdf, cw, text)
+            lines = _wrap_text(pdf, cw - PADDING, text)
             cell_lines.append(lines)
             max_lines = max(max_lines, len(lines))
     return cell_lines, line_height * max_lines
@@ -342,9 +356,9 @@ def _render_table_row(
             cw = col_widths[idx]
             if isinstance(lines, dict) and lines.get("image"):
                 if line_idx == 0:
-                    pdf.rect(x, y_start, cw, row_height)
-                    img_w = min(lines["width"], cw - 2)
-                    img_x = x + (cw - img_w) / 2
+                    pdf.rect(x + PADDING / 2, y_start, cw - PADDING, row_height)
+                    img_w = min(lines["width"], cw - PADDING - 2)
+                    img_x = x + PADDING / 2 + (cw - PADDING - img_w) / 2
                     img_y = y_start + (row_height - lines["height"]) / 2
                     pdf.image(lines["image"], x=img_x, y=img_y, h=lines["height"])
                 x += cw
@@ -358,8 +372,8 @@ def _render_table_row(
                 border = "LBR"
             else:
                 border = "LR"
-            pdf.set_xy(x, y_start + line_idx * line_height)
-            _safe_multi_cell(pdf, cw, line_height, txt, border=border)
+            pdf.set_xy(x + PADDING / 2, y_start + line_idx * line_height)
+            _safe_multi_cell(pdf, cw - PADDING, line_height, txt, border=border)
             x += cw
     pdf.set_xy(x_start, y_start + row_height)
     return row_height
@@ -375,7 +389,7 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[Any]]) -> None:
     """
 
     col_count = max(len(headers), max((len(r) for r in rows), default=0))
-    epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
+    epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin) - PADDING
 
     # Normalize row lengths
     headers = headers + [""] * (col_count - len(headers))
@@ -439,14 +453,15 @@ def _render_list_item(pdf: FPDF, text: str, bullet: str = "-") -> None:
     line_height = 6
     bullet_str = f"{bullet} "
     indent = pdf.get_string_width(bullet_str)
-    epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
+    epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin) - PADDING
     max_width = epw - indent
 
-    lines = _wrap_text(pdf, max_width, text)
+    lines = _wrap_text(pdf, max_width - PADDING, text)
     first = bullet_str + (lines[0] if lines else "")
+    pdf.set_x(pdf.get_x() + PADDING / 2)
     _safe_multi_cell(pdf, epw, line_height, first)
     for line in lines[1:]:
-        pdf.set_x(pdf.l_margin + indent)
+        pdf.set_x(pdf.l_margin + indent + PADDING / 2)
         _safe_multi_cell(pdf, max_width, line_height, line)
 
 
