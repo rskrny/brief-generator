@@ -16,6 +16,7 @@
 
 from textwrap import dedent
 import json
+from typing import Optional
 
 
 # ----------------------------
@@ -339,7 +340,9 @@ def build_script_generator_messages(
 # Public builder (Product Research)
 # ----------------------------
 
-def build_product_research_messages(brand: str, product: str):
+def build_product_research_messages(
+    brand: str, product: str, page_text: Optional[str] = None
+):
     """Prompt the model to gather marketing-compliant product facts.
 
     Returns a messages list asking for JSON with three lists:
@@ -347,24 +350,42 @@ def build_product_research_messages(brand: str, product: str):
     - required_disclaimers: disclaimers that must accompany those claims
     - forbidden: risky claims to avoid
 
+    An optional ``page_text`` can be provided containing text scraped from an
+    official product page. When supplied, it will be embedded in the user
+    prompt so the model can extract specifications and features directly from
+    that text.
+
     The model must respond with JSON only; empty lists are allowed if
     information is unavailable.
     """
 
-    user_content = dedent(
-        f"""
-        Research factual, legally compliant marketing claims for the
-        product "{product}" from brand "{brand}".
+    parts = [
+        dedent(
+            f"""
+            Research factual, legally compliant marketing claims for the
+            product "{product}" from brand "{brand}".
+            """
+        ).strip()
+    ]
 
-        Return JSON with exactly these fields:
-        - "approved_claims": list of short, substantiated marketing claims
-        - "required_disclaimers": list of disclaimers required for those claims
-        - "forbidden": list of risky or prohibited claims to avoid
+    if page_text:
+        parts.append("Product page text:\n" + page_text.strip())
 
-        If unsure or no data, use empty lists. Output JSON only with no
-        commentary or extra keys.
-        """
-    ).strip()
+    parts.append(
+        dedent(
+            """
+            Return JSON with exactly these fields:
+            - "approved_claims": list of short, substantiated marketing claims
+            - "required_disclaimers": list of disclaimers required for those claims
+            - "forbidden": list of risky or prohibited claims to avoid
+
+            If unsure or no data, use empty lists. Output JSON only with no
+            commentary or extra keys.
+            """
+        ).strip()
+    )
+
+    user_content = "\n\n".join(parts)
 
     messages = [
         {
