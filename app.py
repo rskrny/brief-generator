@@ -80,6 +80,10 @@ def _messages_to_single_prompt(messages: List[Dict[str, str]]) -> str:
     return "\n".join(parts).strip()
 
 
+class EmptyGeminiResponseError(RuntimeError):
+    """Raised when Gemini returns an empty response."""
+
+
 def call_gemini_json(
     messages: List[Dict[str, str]],
     model: str = "gemini-1.5-pro",
@@ -98,7 +102,9 @@ def call_gemini_json(
                 prompt_text,
                 generation_config={"temperature": temperature, "response_mime_type": "application/json"},
             )
-            return resp.text or "{}"
+            if not resp.text:
+                raise EmptyGeminiResponseError("Gemini returned no text")
+            return resp.text
         except Exception as e:
             last_err = e
             time.sleep(retry_base * (i + 1))
@@ -199,6 +205,8 @@ if st.button("🔍 Research product facts"):
                 st.info("Review and verify the claims below before proceeding.")
             except Exception:
                 st.error("Research returned invalid JSON")
+        except EmptyGeminiResponseError:
+            st.warning("No facts were retrieved from Gemini. Please try again.")
         except Exception as e:
             st.error(f"Product research failed: {e}")
     else:
