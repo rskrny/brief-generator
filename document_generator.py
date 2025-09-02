@@ -8,11 +8,15 @@ from __future__ import annotations
 
 from typing import Dict, Any, List, Optional
 import json
+import re
 import textwrap
 from pathlib import Path
 
 from fpdf import FPDF
 from fpdf.errors import FPDFException
+
+
+_TABLE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+\s*$")
 
 
 # =========================
@@ -117,9 +121,21 @@ def make_brief_pdf(
     pdf.add_font("DejaVu", "", str(font_path), uni=True)
     pdf.set_font("DejaVu", size=12)
 
-    for line in md.split("\n"):
+    lines = md.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Detect Markdown table blocks
+        if line.startswith("|") and i + 1 < len(lines) and _TABLE_SEPARATOR_RE.match(lines[i + 1]):
+            headers, rows, i = _parse_table_block(lines, i)
+            _render_table(pdf, headers, rows)
+            pdf.ln(4)
+            continue
+
         if not line.strip():
             pdf.ln(5)
+            i += 1
             continue
         try:
             if line.startswith("# "):
@@ -137,9 +153,71 @@ def make_brief_pdf(
                 pdf.multi_cell(0, 6, line)
         except FPDFException:
             pdf.cell(0, 6, line, ln=1)
+        i += 1
 
     pdf_bytes = pdf.output(dest="S")
     return bytes(pdf_bytes)
+
+
+def _parse_table_block(lines: List[str], start: int) -> (List[str], List[List[str]], int):
+    """Parse a markdown table block starting at ``start`` index.
+
+    Returns headers, rows and the index of the next line after the table.
+    """
+    header = [c.strip() for c in lines[start].strip().strip("|").split("|")]
+    i = start + 2  # Skip header and separator line
+    rows: List[List[str]] = []
+    while i < len(lines) and lines[i].startswith("|"):
+        rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+        i += 1
+    return header, rows, i
+
+
+def _calc_row_height(pdf: FPDF, cells: List[str], col_width: float, line_height: float) -> float:
+    heights = []
+    for cell in cells:
+        lines = pdf.multi_cell(col_width, line_height, cell, border=0, split_only=True)
+        heights.append(line_height * len(lines))
+    return max(heights or [line_height])
+
+
+def _render_table_row(pdf: FPDF, cells: List[str], col_width: float, line_height: float) -> float:
+    x_start = pdf.get_x()
+    y_start = pdf.get_y()
+    max_height = 0.0
+    for cell in cells:
+        x = pdf.get_x()
+        y = pdf.get_y()
+        pdf.multi_cell(col_width, line_height, cell, border=1)
+        cell_height = pdf.get_y() - y
+        max_height = max(max_height, cell_height)
+        pdf.set_xy(x + col_width, y)
+    pdf.set_xy(x_start, y_start + max_height)
+    return max_height
+
+
+def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
+    col_count = max(len(headers), max((len(r) for r in rows), default=0))
+    epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
+    col_width = epw / col_count
+    line_height = 6
+
+    # Normalize row lengths
+    headers = headers + [""] * (col_count - len(headers))
+    rows = [r + [""] * (col_count - len(r)) for r in rows]
+
+    pdf.set_font("DejaVu", style="B", size=12)
+    _render_table_row(pdf, headers, col_width, line_height)
+    pdf.set_font("DejaVu", size=12)
+
+    for row in rows:
+        row_height = _calc_row_height(pdf, row, col_width, line_height)
+        if pdf.get_y() + row_height > pdf.page_break_trigger:
+            pdf.add_page()
+            pdf.set_font("DejaVu", style="B", size=12)
+            _render_table_row(pdf, headers, col_width, line_height)
+            pdf.set_font("DejaVu", size=12)
+        _render_table_row(pdf, row, col_width, line_height)
 
 
 # =========================
