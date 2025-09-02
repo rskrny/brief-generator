@@ -216,12 +216,18 @@ if st.button("🔍 Research product facts"):
             try:
                 data = json.loads(research_json)
                 st.session_state["product_research"] = data
-                st.session_state["claims_text"] = "\n".join(data.get("approved_claims", []))
-                st.session_state["forbidden_text"] = "\n".join(data.get("forbidden", []))
-                st.session_state["disclaimers_text"] = "\n".join(
-                    data.get("required_disclaimers", [])
-                )
-                st.info("Review and verify the claims below before proceeding.")
+                approved_claims_list = data.get("approved_claims", []) or []
+                forbidden_list = data.get("forbidden", []) or []
+                disclaimers_list = data.get("required_disclaimers", []) or []
+
+                st.session_state["claims_text"] = "\n".join(approved_claims_list)
+                st.session_state["forbidden_text"] = "\n".join(forbidden_list)
+                st.session_state["disclaimers_text"] = "\n".join(disclaimers_list)
+
+                if approved_claims_list or forbidden_list or disclaimers_list:
+                    st.info("Review and verify the claims below before proceeding.")
+                else:
+                    st.warning("No product facts found; verify the URL or enter claims manually.")
             except Exception:
                 st.error("Research returned invalid JSON")
         except EmptyGeminiResponseError:
