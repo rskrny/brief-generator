@@ -175,7 +175,8 @@ def make_brief_pdf(
     class BriefPDF(FPDF):
         def footer(self) -> None:
             self.set_y(-15)
-            self.set_font("DejaVu", size=8)
+            # Use whichever font family is active to avoid missing-font errors
+            self.set_font(self.font_family, size=8)
             _safe_multi_cell(self, 0, 10, f"{self.page_no()}/{{nb}}", align="C")
 
     pdf = BriefPDF(orientation=orientation)
@@ -185,8 +186,11 @@ def make_brief_pdf(
 
     # Font (bundled DejaVu if present; fall back to core if missing)
     font_path = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
+    bold_path = Path(__file__).parent / "fonts" / "DejaVuSans-Bold.ttf"
     if font_path.exists():
         pdf.add_font("DejaVu", "", str(font_path), uni=True)
+        if bold_path.exists():
+            pdf.add_font("DejaVu", "B", str(bold_path), uni=True)
         pdf.set_font("DejaVu", size=12)
     else:
         pdf.set_font("Helvetica", size=12)
@@ -332,6 +336,20 @@ def _safe_multi_cell(pdf: FPDF, width: float, line_height: float, text: str, **k
         if i < len(lines) - 1:
             pdf.set_x(start_x)
 
+
+def _render_list_item(
+    pdf: FPDF, text: str, bullet: str = "\u2022", line_height: float = 6
+) -> None:
+    """Render a bullet list item ensuring wrapped text stays within margins."""
+
+    bullet_text = f"{bullet} "
+    bullet_width = pdf.get_string_width(bullet_text)
+    start_x = pdf.get_x()
+
+    pdf.cell(bullet_width, line_height, bullet_text)
+    pdf.set_x(start_x + bullet_width)
+    _safe_multi_cell(pdf, pdf.epw - bullet_width, line_height, text)
+
 def _split_row_cells(
     pdf: FPDF, cells: List[Any], col_widths: List[float], line_height: float
 ) -> Tuple[List[Any], float]:
@@ -396,7 +414,11 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     col_widths = [base for _ in headers]
 
     if headers:
-        pdf.set_font(pdf.font_family, style="B", size=font_size)
+        # Use bold variant if available, otherwise fall back to a core font
+        if f"{pdf.font_family}B" in pdf.fonts:
+            pdf.set_font(pdf.font_family, style="B", size=font_size)
+        else:
+            pdf.set_font("Helvetica", style="B", size=font_size)
         _render_table_row(pdf, headers, col_widths, line_height)
         pdf.set_font(pdf.font_family, size=font_size)
 
