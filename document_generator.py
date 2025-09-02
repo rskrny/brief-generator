@@ -24,6 +24,7 @@ _IMAGE_CELL_HEIGHT = 30  # fixed height for images in table cells
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
 
 PADDING = 1  # small padding used across rendering helpers
+CELL_PADDING = 2  # horizontal padding inside table cells
 
 
 def _get_image_path(cell: Any) -> Optional[str]:
@@ -334,7 +335,7 @@ def _split_row_cells(
             max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
         else:
             text = "" if cell is None else str(cell)
-            lines = _wrap_text(pdf, cw - PADDING, text)
+            lines = _wrap_text(pdf, cw - CELL_PADDING, text)
             cell_lines.append(lines)
             max_lines = max(max_lines, len(lines))
     return cell_lines, line_height * max_lines
@@ -356,9 +357,9 @@ def _render_table_row(
             cw = col_widths[idx]
             if isinstance(lines, dict) and lines.get("image"):
                 if line_idx == 0:
-                    pdf.rect(x + PADDING / 2, y_start, cw - PADDING, row_height)
-                    img_w = min(lines["width"], cw - PADDING - 2)
-                    img_x = x + PADDING / 2 + (cw - PADDING - img_w) / 2
+                    pdf.rect(x + CELL_PADDING / 2, y_start, cw - CELL_PADDING, row_height)
+                    img_w = min(lines["width"], cw - CELL_PADDING - 2)
+                    img_x = x + CELL_PADDING / 2 + (cw - CELL_PADDING - img_w) / 2
                     img_y = y_start + (row_height - lines["height"]) / 2
                     pdf.image(lines["image"], x=img_x, y=img_y, h=lines["height"])
                 x += cw
@@ -372,8 +373,8 @@ def _render_table_row(
                 border = "LBR"
             else:
                 border = "LR"
-            pdf.set_xy(x + PADDING / 2, y_start + line_idx * line_height)
-            _safe_multi_cell(pdf, cw - PADDING, line_height, txt, border=border)
+            pdf.set_xy(x + CELL_PADDING / 2, y_start + line_idx * line_height)
+            _safe_multi_cell(pdf, cw - CELL_PADDING, line_height, txt, border=border)
             x += cw
     pdf.set_xy(x_start, y_start + row_height)
     return row_height
@@ -407,9 +408,9 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[Any]]) -> None:
             img_path = _get_image_path(cell)
             if img_path:
                 with Image.open(img_path) as im:
-                    w = _IMAGE_CELL_HEIGHT * im.width / im.height
+                    w = _IMAGE_CELL_HEIGHT * im.width / im.height + CELL_PADDING
             else:
-                w = pdf.get_string_width("" if cell is None else str(cell)) + 4
+                w = pdf.get_string_width("" if cell is None else str(cell)) + 4 + CELL_PADDING
             max_w = max(max_w, w)
         col_widths.append(max_w)
     total_width = sum(col_widths) or epw
@@ -459,7 +460,7 @@ def _render_list_item(pdf: FPDF, text: str, bullet: str = "-") -> None:
     lines = _wrap_text(pdf, max_width - PADDING, text)
     first = bullet_str + (lines[0] if lines else "")
     pdf.set_x(pdf.get_x() + PADDING / 2)
-    _safe_multi_cell(pdf, epw, line_height, first)
+    _safe_multi_cell(pdf, max_width + indent, line_height, first)
     for line in lines[1:]:
         pdf.set_x(pdf.l_margin + indent + PADDING / 2)
         _safe_multi_cell(pdf, max_width, line_height, line)
