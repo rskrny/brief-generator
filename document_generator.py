@@ -106,12 +106,12 @@ def make_brief_pdf(
     orientation: Optional[str] = None,
     column_threshold: int = 8,
 ) -> bytes:
-    """Generate a two-page PDF consisting of a summary and storyboard table.
+    """Generate a two-page PDF consisting of a summary and reference scene table.
 
     The first page contains only high-level information (header, product facts,
-    reference video summary). The second page renders the scene-by-scene
-    storyboard table. ``orientation`` is determined from the storyboard table
-    unless explicitly provided.
+    reference video summary). The second page renders the scene-by-scene table
+    describing the reference video. ``orientation`` is determined from that
+    table unless explicitly provided.
     """
 
     # =========================
@@ -146,7 +146,7 @@ def make_brief_pdf(
     # =========================
     # Build storyboard table lines
     # =========================
-    storyboard_lines = _script_scenes_table(script)
+    storyboard_lines = _scenes_table(analyzer)
 
     # Determine orientation from storyboard table
     if orientation is None:
@@ -518,43 +518,57 @@ def _beats_table(analyzer: Dict[str, Any]) -> List[str]:
 
 
 def _scenes_table(analyzer: Dict[str, Any]) -> List[str]:
+    """Return a markdown table describing reference video scenes.
+
+    Columns: Timestamp, Shot Type, Framing, Action, Dialogue,
+    On-Screen Text and Reference Thumbnail Screenshot.
+    """
+
     scenes = analyzer.get("scenes", []) or []
     lines = ["### Scene-by-Scene (Reference Video)"]
     if not scenes:
         lines.extend(["", "> No scenes provided."])
         return lines
+
     lines.extend(
         [
             "",
-            "| # | start–end (s) | shot | camera | framing | action | dialogue/VO | on-screen text | SFX | transition | retention |",
-            "|---:|---|---|---|---|---|---|---|---|---|",
+            "| Timestamp | Shot Type | Framing | Action | Dialogue | On-Screen Text | Reference Thumbnail Screenshot |",
+            "|---|---|---|---|---|---|---|",
         ]
     )
+
     for s in scenes:
         start = _num(s.get("start_s"))
         end = _num(s.get("end_s"))
-        dur = f"{start:.2f}–{end:.2f}" if start is not None and end is not None else "–"
+        timestamp = (
+            f"{start:.2f}–{end:.2f}" if start is not None and end is not None else ""
+        )
         ontext = (
             "; ".join([_osd_str(x) for x in s.get("on_screen_text", [])])
             if s.get("on_screen_text")
             else ""
         )
-        retention = ", ".join(s.get("retention_device", []) or [])
+        thumb = (
+            s.get("reference_thumbnail")
+            or s.get("thumbnail_url")
+            or s.get("thumbnail")
+            or s.get("image_url")
+            or s.get("img_url")
+            or ""
+        )
         lines.append(
-            "| {idx} | {dur} | {shot} | {cam} | {frame} | {act} | {dlg} | {txt} | {sfx} | {tr} | {ret} |".format(
-                idx=s.get("idx", ""),
-                dur=dur,
+            "| {ts} | {shot} | {frame} | {act} | {dlg} | {txt} | {thumb} |".format(
+                ts=_safe(timestamp),
                 shot=_safe(s.get("shot", "")),
-                cam=_safe(s.get("camera", "")),
                 frame=_safe(s.get("framing", "")),
                 act=_safe(s.get("action", "")),
                 dlg=_safe(s.get("dialogue_vo", "")),
                 txt=_safe(ontext),
-                sfx=_safe(", ".join(s.get("sfx", []) or [])),
-                tr=_safe(s.get("transition_out", "")),
-                ret=_safe(retention),
+                thumb=_safe(thumb),
             )
         )
+
     return lines
 
 
