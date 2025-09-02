@@ -279,7 +279,10 @@ def _wrap_text(pdf: FPDF, width: float, text: str) -> List[str]:
     """
 
     try:
-        return pdf.multi_cell(width, 1, text, border=0, split_only=True)
+        x, y = pdf.get_x(), pdf.get_y()
+        lines = pdf.multi_cell(width, 1, text, border=0, split_only=True)
+        pdf.set_xy(x, y)
+        return lines
     except FPDFException:
         char_w = pdf.get_string_width("M") or 1
         max_chars = max(int(width / char_w), 1)
