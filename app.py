@@ -92,6 +92,7 @@ def call_gemini_json(
     temperature: float = 0.2,
     max_retries: int = 3,
     retry_base: float = 1.5,
+    max_output_tokens: int = 4096,
 ) -> str:
     """Calls Gemini and returns a JSON string (we request application/json)."""
     _ensure_gemini_configured()
@@ -102,7 +103,11 @@ def call_gemini_json(
             mdl = genai.GenerativeModel(model)
             resp = mdl.generate_content(
                 prompt_text,
-                generation_config={"temperature": temperature, "response_mime_type": "application/json"},
+                generation_config={
+                    "temperature": temperature,
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": max_output_tokens,
+                },
             )
             if not resp.text:
                 raise EmptyGeminiResponseError("Gemini returned no text")
