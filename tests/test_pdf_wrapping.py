@@ -20,11 +20,17 @@ def _iter_text_lines(layout_obj):
             yield from _iter_text_lines(child)
 
 
-def assert_pdf_lines_fit(page_iter):
+def assert_pdf_lines_fit(page_iter, pdf):
+    """Assert that rendered text lines stay within the page margins."""
+
+    l_margin_pt = pdf.l_margin * pdf.k
+    r_margin_pt = pdf.r_margin * pdf.k
+
     for page in page_iter:
         width = page.width
         for line in _iter_text_lines(page):
-            assert line.x1 <= width + 1  # allow tiny rounding tolerance
+            assert line.x0 >= l_margin_pt - 1
+            assert line.x1 <= width - r_margin_pt + 1
 
 
 def test_long_unbroken_word_and_bullet_list():
@@ -45,7 +51,7 @@ def test_long_unbroken_word_and_bullet_list():
     _render_list_item(pdf, long_word)
 
     pdf_bytes = bytes(pdf.output(dest="S"))
-    assert_pdf_lines_fit(extract_pages(io.BytesIO(pdf_bytes)))
+    assert_pdf_lines_fit(extract_pages(io.BytesIO(pdf_bytes)), pdf)
 
 
 def test_narrow_table_columns_wrap():
@@ -64,4 +70,4 @@ def test_narrow_table_columns_wrap():
     _render_table(pdf, headers, rows)
 
     pdf_bytes = bytes(pdf.output(dest="S"))
-    assert_pdf_lines_fit(extract_pages(io.BytesIO(pdf_bytes)))
+    assert_pdf_lines_fit(extract_pages(io.BytesIO(pdf_bytes)), pdf)
