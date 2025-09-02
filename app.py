@@ -167,13 +167,42 @@ with st.expander("Advanced evidence (optional: improves accuracy)"):
 
 st.markdown("---")
 st.header("2) Target Product Facts")
-brand_name = st.text_input("Brand", value="SIAWAG")
-product_name = st.text_input("Product", value="BTW73")
+brand_name = st.text_input("Brand", value="", placeholder="Enter brand name")
+product_name = st.text_input("Product", value="", placeholder="Enter product name")
+
+if "claims_text" not in st.session_state:
+    st.session_state["claims_text"] = ""
+
 claims_text = st.text_area(
     "Approved claims (whitelist, one per line)",
     height=120,
-    value="15+ years producing quality audio products\nBluetooth 5.4\nENC for clearer calls\nIPX5 water-resistant\nFast charging",
+    key="claims_text",
+    placeholder="List approved claims, one per line",
 )
+
+if st.button("🔍 Research product facts"):
+    if brand_name.strip() and product_name.strip():
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Provide concise, factual marketing claims for the {brand_name} {product_name}.\n"
+                        "Return JSON with a 'claims' list."
+                    ),
+                }
+            ]
+            with st.spinner("Researching product facts…"):
+                research_json = call_gemini_json(messages=messages, model=model, temperature=temperature)
+            try:
+                data = json.loads(research_json)
+                st.session_state["claims_text"] = "\n".join(data.get("claims", []))
+            except Exception:
+                st.error("Research returned invalid JSON")
+        except Exception as e:
+            st.error(f"Product research failed: {e}")
+    else:
+        st.warning("Enter brand and product first.")
 with st.expander("Advanced brand controls"):
     forbidden_text = st.text_area(
         "Forbidden claims",
