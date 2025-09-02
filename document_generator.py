@@ -9,6 +9,10 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional
 import json
 import textwrap
+from pathlib import Path
+
+from fpdf import FPDF
+from fpdf.errors import FPDFException
 
 
 # =========================
@@ -86,6 +90,56 @@ def make_brief_markdown(
     lines.append("")
 
     return "\n".join(lines)
+
+
+def make_brief_pdf(
+    *,
+    analyzer: Dict[str, Any],
+    script: Dict[str, Any],
+    product_facts: Dict[str, Any],
+    title: str = "AI-Generated Influencer Brief",
+) -> bytes:
+    """Generate a PDF version of the brief.
+
+    This is a lightweight conversion that renders the markdown produced by
+    :func:`make_brief_markdown` into a text PDF using the bundled DejaVuSans
+    font so Unicode characters render correctly.
+    """
+
+    md = make_brief_markdown(
+        analyzer=analyzer, script=script, product_facts=product_facts, title=title
+    )
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    font_path = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
+    pdf.add_font("DejaVu", "", str(font_path), uni=True)
+    pdf.set_font("DejaVu", size=12)
+
+    for line in md.split("\n"):
+        if not line.strip():
+            pdf.ln(5)
+            continue
+        try:
+            if line.startswith("# "):
+                pdf.set_font("DejaVu", size=16)
+                pdf.multi_cell(0, 8, line[2:].strip())
+                pdf.set_font("DejaVu", size=12)
+            elif line.startswith("## "):
+                pdf.set_font("DejaVu", size=14)
+                pdf.multi_cell(0, 7, line[3:].strip())
+                pdf.set_font("DejaVu", size=12)
+            elif line.startswith("### "):
+                pdf.set_font("DejaVu", size=12)
+                pdf.multi_cell(0, 6, line[4:].strip())
+            else:
+                pdf.multi_cell(0, 6, line)
+        except FPDFException:
+            pdf.cell(0, 6, line, ln=1)
+
+    pdf_bytes = pdf.output(dest="S")
+    return bytes(pdf_bytes)
 
 
 # =========================
