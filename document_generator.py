@@ -10,13 +10,29 @@ from typing import Dict, Any, List, Optional, Tuple
 import json
 import re
 import textwrap
+import math
 from pathlib import Path
 
+from PIL import Image
 from fpdf import FPDF
 from fpdf.errors import FPDFException
 
 
 _TABLE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+\s*$")
+
+_IMAGE_CELL_HEIGHT = 30  # fixed height for images in table cells
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
+
+
+def _get_image_path(cell: Any) -> Optional[str]:
+    """Return an image path if *cell* represents an image, otherwise ``None``."""
+    if isinstance(cell, dict) and "image" in cell:
+        return str(cell["image"])
+    if isinstance(cell, (str, Path)):
+        path = Path(cell)
+        if path.suffix.lower() in _IMAGE_EXTENSIONS:
+            return str(path)
+    return None
 
 
 # =========================
@@ -290,32 +306,52 @@ def _max_table_columns(md: str) -> int:
 
 
 def _split_row_cells(
-    pdf: FPDF, cells: List[str], col_width: float, line_height: float
-) -> Tuple[List[List[str]], float]:
-    """Split each cell into lines and return the lines and total row height."""
-    cell_lines: List[List[str]] = []
-    max_lines = 0
-    for cell in cells:
-        lines = pdf.multi_cell(col_width, line_height, cell, border=0, split_only=True)
-        cell_lines.append(lines)
-        max_lines = max(max_lines, len(lines))
-    max_lines = max(max_lines, 1)
+    pdf: FPDF, cells: List[Any], col_widths: List[float], line_height: float
+) -> Tuple[List[Any], float]:
+    """Split text cells into lines and capture image cell metadata."""
+    cell_lines: List[Any] = []
+    max_lines = 1
+    for cell, cw in zip(cells, col_widths):
+        img_path = _get_image_path(cell)
+        if img_path:
+            with Image.open(img_path) as im:
+                img_w = _IMAGE_CELL_HEIGHT * im.width / im.height
+            cell_lines.append({"image": img_path, "width": img_w, "height": _IMAGE_CELL_HEIGHT})
+            max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
+        else:
+            text = "" if cell is None else str(cell)
+            try:
+                lines = pdf.multi_cell(cw, line_height, text, border=0, split_only=True)
+            except FPDFException:
+                lines = [text]
+            cell_lines.append(lines)
+            max_lines = max(max_lines, len(lines))
     return cell_lines, line_height * max_lines
 
 
 def _render_table_row(
     pdf: FPDF,
-    cells: List[str],
-    col_width: float,
+    cells: List[Any],
+    col_widths: List[float],
     line_height: float,
 ) -> float:
-    cell_lines, row_height = _split_row_cells(pdf, cells, col_width, line_height)
+    cell_lines, row_height = _split_row_cells(pdf, cells, col_widths, line_height)
     max_lines = int(row_height / line_height)
     x_start = pdf.get_x()
     y_start = pdf.get_y()
     for line_idx in range(max_lines):
         x = x_start
-        for lines in cell_lines:
+        for idx, lines in enumerate(cell_lines):
+            cw = col_widths[idx]
+            if isinstance(lines, dict) and lines.get("image"):
+                if line_idx == 0:
+                    pdf.rect(x, y_start, cw, row_height)
+                    img_w = min(lines["width"], cw - 2)
+                    img_x = x + (cw - img_w) / 2
+                    img_y = y_start + (row_height - lines["height"]) / 2
+                    pdf.image(lines["image"], x=img_x, y=img_y, h=lines["height"])
+                x += cw
+                continue
             txt = lines[line_idx] if line_idx < len(lines) else ""
             if line_idx == 0 and max_lines == 1:
                 border = "LTRB"
@@ -326,46 +362,74 @@ def _render_table_row(
             else:
                 border = "LR"
             pdf.set_xy(x, y_start + line_idx * line_height)
-            pdf.multi_cell(col_width, line_height, txt, border=border)
-            x += col_width
+            pdf.multi_cell(cw, line_height, txt, border=border)
+            x += cw
     pdf.set_xy(x_start, y_start + row_height)
     return row_height
 
 
-def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
+def _render_table(pdf: FPDF, headers: List[str], rows: List[List[Any]]) -> None:
+    """Render a table of ``headers`` and ``rows`` to ``pdf``.
+
+    Each cell in ``rows`` may be a plain string or a mapping ``{"image": path}``
+    (or other path-like object) pointing to an image file. Image cells are drawn
+    with a fixed height of ``_IMAGE_CELL_HEIGHT`` and column widths are scaled to
+    accommodate the rendered image widths.
+    """
+
     col_count = max(len(headers), max((len(r) for r in rows), default=0))
     epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
-    col_width = epw / col_count if col_count else epw
-
-    # Reduce font size when columns get narrow
-    font_size = 12
-    if col_width < 25:
-        font_size = 10
-    if col_width < 20:
-        font_size = 8
-    if col_width < 15:
-        font_size = 6
-    line_height = font_size * 0.5
 
     # Normalize row lengths
     headers = headers + [""] * (col_count - len(headers))
     rows = [r + [""] * (col_count - len(r)) for r in rows]
 
+    font_size = 12
+    pdf.set_font("DejaVu", size=font_size)
+
+    # Determine column widths based on content
+    col_widths: List[float] = []
+    for idx in range(col_count):
+        column = [headers[idx]] + [row[idx] for row in rows]
+        max_w = 0.0
+        for cell in column:
+            img_path = _get_image_path(cell)
+            if img_path:
+                with Image.open(img_path) as im:
+                    w = _IMAGE_CELL_HEIGHT * im.width / im.height
+            else:
+                w = pdf.get_string_width("" if cell is None else str(cell)) + 4
+            max_w = max(max_w, w)
+        col_widths.append(max_w)
+    total_width = sum(col_widths) or epw
+    scale = epw / total_width
+    col_widths = [w * scale for w in col_widths]
+
+    # Reduce font size when columns get narrow
+    min_col_width = min(col_widths) if col_widths else epw
+    if min_col_width < 25:
+        font_size = 10
+    if min_col_width < 20:
+        font_size = 8
+    if min_col_width < 15:
+        font_size = 6
+    line_height = font_size * 0.5
+
     pdf.set_font("DejaVu", style="B", size=font_size)
-    _, header_height = _split_row_cells(pdf, headers, col_width, line_height)
+    _, header_height = _split_row_cells(pdf, headers, col_widths, line_height)
     if pdf.get_y() + header_height > pdf.page_break_trigger:
         pdf.add_page()
-    _render_table_row(pdf, headers, col_width, line_height)
+    _render_table_row(pdf, headers, col_widths, line_height)
     pdf.set_font("DejaVu", size=font_size)
 
     for row in rows:
-        _, row_height = _split_row_cells(pdf, row, col_width, line_height)
+        _, row_height = _split_row_cells(pdf, row, col_widths, line_height)
         if pdf.get_y() + row_height > pdf.page_break_trigger:
             pdf.add_page()
             pdf.set_font("DejaVu", style="B", size=font_size)
-            _render_table_row(pdf, headers, col_width, line_height)
+            _render_table_row(pdf, headers, col_widths, line_height)
             pdf.set_font("DejaVu", size=font_size)
-        _render_table_row(pdf, row, col_width, line_height)
+        _render_table_row(pdf, row, col_widths, line_height)
 
 
 # =========================
