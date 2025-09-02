@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import json
 import re
 import textwrap
@@ -211,12 +211,20 @@ def _max_table_columns(md: str) -> int:
     return max_cols
 
 
-def _calc_row_height(pdf: FPDF, cells: List[str], col_width: float, line_height: float) -> float:
-    heights = []
+def _split_row_cells(
+    pdf: FPDF, cells: List[str], col_width: float, line_height: float
+) -> Tuple[List[List[str]], float]:
+    """Split each cell into lines and return the lines and total row height."""
+    cell_lines: List[List[str]] = []
+    max_lines = 0
     for cell in cells:
-        lines = pdf.multi_cell(col_width, line_height, cell, border=0, split_only=True)
-        heights.append(line_height * len(lines))
-    return max(heights or [line_height])
+        lines = pdf.multi_cell(
+            col_width, line_height, cell, border=0, split_only=True
+        )
+        cell_lines.append(lines)
+        max_lines = max(max_lines, len(lines))
+    max_lines = max(max_lines, 1)
+    return cell_lines, line_height * max_lines
 
 
 def _render_table_row(
@@ -226,24 +234,42 @@ def _render_table_row(
     line_height: float,
     rotate: bool = False,
 ) -> float:
-    x_start = pdf.get_x()
-    y_start = pdf.get_y()
-    max_height = 0.0
-    for cell in cells:
-        x = pdf.get_x()
-        y = pdf.get_y()
-        if rotate:
+    if rotate:
+        x_start = pdf.get_x()
+        y_start = pdf.get_y()
+        max_height = 0.0
+        for cell in cells:
+            x = pdf.get_x()
+            y = pdf.get_y()
             with pdf.rotation(90, x + col_width / 2, y + col_width / 2):
                 pdf.multi_cell(line_height, col_width, cell, border=1)
             cell_height = col_width
             pdf.set_xy(x + col_width, y)
-        else:
-            pdf.multi_cell(col_width, line_height, cell, border=1)
-            cell_height = pdf.get_y() - y
-            pdf.set_xy(x + col_width, y)
-        max_height = max(max_height, cell_height)
-    pdf.set_xy(x_start, y_start + max_height)
-    return max_height
+            max_height = max(max_height, cell_height)
+        pdf.set_xy(x_start, y_start + max_height)
+        return max_height
+
+    cell_lines, row_height = _split_row_cells(pdf, cells, col_width, line_height)
+    max_lines = int(row_height / line_height)
+    x_start = pdf.get_x()
+    y_start = pdf.get_y()
+    for line_idx in range(max_lines):
+        x = x_start
+        for lines in cell_lines:
+            txt = lines[line_idx] if line_idx < len(lines) else ""
+            if line_idx == 0 and max_lines == 1:
+                border = "LTRB"
+            elif line_idx == 0:
+                border = "LTR"
+            elif line_idx == max_lines - 1:
+                border = "LBR"
+            else:
+                border = "LR"
+            pdf.set_xy(x, y_start + line_idx * line_height)
+            pdf.multi_cell(col_width, line_height, txt, border=border)
+            x += col_width
+    pdf.set_xy(x_start, y_start + row_height)
+    return row_height
 
 
 def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
@@ -269,7 +295,7 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     pdf.set_font("DejaVu", size=font_size)
 
     for row in rows:
-        row_height = _calc_row_height(pdf, row, col_width, line_height)
+        _, row_height = _split_row_cells(pdf, row, col_width, line_height)
         if pdf.get_y() + row_height > pdf.page_break_trigger:
             pdf.add_page()
             pdf.set_font("DejaVu", style="B", size=font_size)
