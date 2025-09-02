@@ -369,23 +369,32 @@ def _edit_grammar_summary(analyzer: Dict[str, Any]) -> List[str]:
 
 def _beats_table(analyzer: Dict[str, Any]) -> List[str]:
     beats = analyzer.get("beats", []) or []
-    lines = ["### Beat Grid", "", "| t (s) | type | note |", "|---:|---|---|"]
+    lines = ["### Beat Grid"]
+    if not beats:
+        lines.extend(["", "> No beats detected."])
+        return lines
+    lines.extend(["", "| t (s) | type | note |", "|---:|---|---|"])
     for b in beats:
         t = _num(b.get("t"))
-        lines.append(f"| {t:.2f} | {b.get('type','')} | {b.get('note','')} |" if t is not None else f"|  | {b.get('type','')} | {b.get('note','')} |")
-    if len(beats) == 0:
-        lines.append("> No beats detected.")
+        lines.append(
+            f"| {t:.2f} | {b.get('type','')} | {b.get('note','')} |"
+            if t is not None
+            else f"|  | {b.get('type','')} |{b.get('note','')} |"
+        )
     return lines
 
 
 def _scenes_table(analyzer: Dict[str, Any]) -> List[str]:
     scenes = analyzer.get("scenes", []) or []
-    lines = [
-        "### Scene-by-Scene (Reference Video)",
+    lines = ["### Scene-by-Scene (Reference Video)"]
+    if not scenes:
+        lines.extend(["", "> No scenes provided."])
+        return lines
+    lines.extend([
         "",
         "| # | start–end (s) | shot | camera | framing | action | dialogue/VO | on-screen text | SFX | transition | retention |",
-        "|---:|---|---|---|---|---|---|---|---|---|"
-    ]
+        "|---:|---|---|---|---|---|---|---|---|---|",
+    ])
     for s in scenes:
         start = _num(s.get("start_s"))
         end = _num(s.get("end_s"))
@@ -405,8 +414,6 @@ def _scenes_table(analyzer: Dict[str, Any]) -> List[str]:
             tr=_safe(s.get("transition_out","")),
             ret=_safe(retention),
         ))
-    if len(scenes) == 0:
-        lines.append("> No scenes provided.")
     return lines
 
 
@@ -435,12 +442,15 @@ def _script_opening(script: Dict[str, Any]) -> List[str]:
 def _script_scenes_table(script: Dict[str, Any]) -> List[str]:
     s = script.get("script", {})
     scenes = s.get("scenes", []) or []
-    lines = [
-        "### Scene-by-Scene (Target Script)",
+    lines = ["### Scene-by-Scene (Target Script)"]
+    if not scenes:
+        lines.extend(["", "> No scenes provided."])
+        return lines
+    lines.extend([
         "",
         "| # | start–end (s) | shot | camera | framing | action | dialogue/VO | on-screen text | SFX | transition | retention | product focus |",
-        "|---:|---|---|---|---|---|---|---|---|---|---|"
-    ]
+        "|---:|---|---|---|---|---|---|---|---|---|---|",
+    ])
     for sc in scenes:
         start = _num(sc.get("start_s"))
         end = _num(sc.get("end_s"))
@@ -461,8 +471,6 @@ def _script_scenes_table(script: Dict[str, Any]) -> List[str]:
             ret=_safe(retention),
             pf=_safe(sc.get("product_focus","")),
         ))
-    if len(scenes) == 0:
-        lines.append("> No scenes provided.")
     return lines
 
 
