@@ -362,16 +362,25 @@ with script_col:
                 with st.spinner("Authoring scene-by-scene script (Gemini)…"):
                     script_json_str = call_gemini_json(messages=messages, model=model, temperature=temperature)
 
-                script_parsed = json.loads(script_json_str)
-                serrs = validate_script_json(script_parsed, target_runtime_s=target_runtime_s)
-
-                st.session_state["script_json_str"] = script_json_str
-                st.session_state["script_parsed"] = script_parsed
-
-                if serrs:
-                    st.warning("Script JSON warnings:\n- " + "\n- ".join(serrs))
+                try:
+                    script_parsed = json.loads(script_json_str)
+                except json.JSONDecodeError:
+                    st.error(
+                        "Script generator returned invalid JSON. The output may be invalid or truncated."
+                    )
+                    st.code(script_json_str)
                 else:
-                    st.success("Script JSON ready ✅")
+                    serrs = validate_script_json(
+                        script_parsed, target_runtime_s=target_runtime_s
+                    )
+
+                    st.session_state["script_json_str"] = script_json_str
+                    st.session_state["script_parsed"] = script_parsed
+
+                    if serrs:
+                        st.warning("Script JSON warnings:\n- " + "\n- ".join(serrs))
+                    else:
+                        st.success("Script JSON ready ✅")
 
         except Exception as e:
             st.error(f"Script generation failed: {e}")
