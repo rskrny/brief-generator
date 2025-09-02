@@ -196,6 +196,7 @@ if st.button("🔍 Research product facts"):
                 st.session_state["disclaimers_text"] = "\n".join(
                     data.get("required_disclaimers", [])
                 )
+                st.info("Review and verify the claims below before proceeding.")
             except Exception:
                 st.error("Research returned invalid JSON")
         except Exception as e:
@@ -209,6 +210,8 @@ claims_text = st.text_area(
     key="claims_text",
     placeholder="List approved claims, one per line",
 )
+
+st.caption("Verify the factual accuracy of these claims before proceeding.")
 
 with st.expander("Advanced brand controls"):
     forbidden_text = st.text_area(
@@ -229,13 +232,11 @@ with st.expander("Advanced brand controls"):
 # Build packets
 research_packet = st.session_state.get("product_research", {})
 
-# Build packets (prefer researched data, fall back to manual inputs)
-approved_claims = research_packet.get("approved_claims") or [x.strip() for x in claims_text.splitlines() if x.strip()]
-forbidden_claims = research_packet.get("forbidden") or [x.strip() for x in forbidden_text.splitlines() if x.strip()]
-required_disclaimers = research_packet.get("required_disclaimers") or [
-    x.strip() for x in (disclaimers_text.splitlines() if 'disclaimers_text' in locals() else []) if x.strip()
-]
-cta_variants = [x.strip() for x in (cta_variant_text.splitlines() if 'cta_variant_text' in locals() else []) if x.strip()]
+# Build packets (use editable text areas so users can modify research results)
+approved_claims = [x.strip() for x in claims_text.splitlines() if x.strip()]
+forbidden_claims = [x.strip() for x in forbidden_text.splitlines() if x.strip()]
+required_disclaimers = [x.strip() for x in disclaimers_text.splitlines() if x.strip()]
+cta_variants = [x.strip() for x in cta_variant_text.splitlines() if x.strip()]
 
 brand_value = research_packet.get("brand") or brand_name.strip()
 product_name_value = research_packet.get("product_name") or product_name.strip()
