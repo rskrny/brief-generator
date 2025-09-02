@@ -313,7 +313,15 @@ def _parse_table_block(
     return header, rows, i
 
 def _wrap_text(pdf: FPDF, width: float, text: str) -> List[str]:
-    width = max(width - PADDING, 0)
+    """Split *text* into lines that fit within *width*.
+
+    The caller is responsible for accounting for any desired padding so that
+    both wrapping and rendering use the same effective width.  This helper only
+    guards against negative widths to avoid errors from FPDF.
+    """
+
+    # Avoid negative widths which can cause FPDF to raise exceptions
+    width = max(width, 0)
     try:
         x, y = pdf.get_x(), pdf.get_y()
         lines = pdf.multi_cell(width, 1, text, border=0, split_only=True)
@@ -367,7 +375,8 @@ def _split_row_cells(
             max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
         else:
             text = "" if cell is None else str(cell)
-            lines = _wrap_text(pdf, cw - CELL_PADDING, text)
+            available_width = max(cw - CELL_PADDING, 0)
+            lines = _wrap_text(pdf, available_width, text)
             cell_lines.append(lines)
             max_lines = max(max_lines, len(lines))
     return cell_lines, line_height * max_lines
