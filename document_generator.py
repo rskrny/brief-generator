@@ -106,28 +106,51 @@ def make_brief_pdf(
     orientation: Optional[str] = None,
     column_threshold: int = 8,
 ) -> bytes:
-    """Generate a PDF version of the brief.
+    """Generate a two-page PDF consisting of a summary and storyboard table.
 
-    Parameters
-    ----------
-    orientation:
-        Page orientation. ``"P"``/``"portrait"`` for portrait, ``"L"``/``"landscape"``
-        for landscape. If ``None`` (default) the orientation is automatically
-        chosen based on the widest table in the document: if any table has more
-        than ``column_threshold`` columns the page will be rendered in
-        landscape mode.
-
-    This is a lightweight conversion that renders the markdown produced by
-    :func:`make_brief_markdown` into a text PDF using the bundled DejaVuSans
-    font so Unicode characters render correctly.
+    The first page contains only high-level information (header, product facts,
+    reference video summary). The second page renders the scene-by-scene
+    storyboard table. ``orientation`` is determined from the storyboard table
+    unless explicitly provided.
     """
 
-    md = make_brief_markdown(
-        analyzer=analyzer, script=script, product_facts=product_facts, title=title
-    )
+    # =========================
+    # Build summary lines
+    # =========================
+    lines: List[str] = []
+    brand = product_facts.get("brand") or ""
+    product = product_facts.get("product_name") or ""
+    lines.append(f"# {title}")
+    if brand or product:
+        lines.append(f"**Product**: {brand} {product}".strip())
+    lines.append("")
 
+    lines.append("## Product Facts (Claims Whitelist)")
+    _append_list(lines, product_facts.get("approved_claims", []), bullet="- ")
+    if product_facts.get("required_disclaimers"):
+        lines.append("")
+        lines.append("**Required Disclaimers**")
+        _append_list(lines, product_facts.get("required_disclaimers", []), bullet="- ")
+    if product_facts.get("forbidden"):
+        lines.append("")
+        lines.append("**Forbidden / Restricted Claims**")
+        _append_list(lines, product_facts.get("forbidden", []), bullet="- ")
+    lines.append("")
+
+    lines.append("## Reference Video — Director Breakdown")
+    lines.extend(_analyzer_global_summary(analyzer))
+    lines.append("")
+
+    summary_lines = lines
+
+    # =========================
+    # Build storyboard table lines
+    # =========================
+    storyboard_lines = _script_scenes_table(script)
+
+    # Determine orientation from storyboard table
     if orientation is None:
-        max_cols = _max_table_columns(md)
+        max_cols = _max_table_columns("\n".join(storyboard_lines))
         orientation = "L" if max_cols > column_threshold else "P"
     else:
         orientation = orientation[0].upper()
@@ -149,15 +172,45 @@ def make_brief_pdf(
     font_path = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
     pdf.add_font("DejaVu", "", str(font_path), uni=True)
     pdf.add_font("DejaVu", "B", str(font_path), uni=True)
+
+    # ---- Render summary page ----
     pdf.add_page()
     pdf.set_font("DejaVu", size=12)
+    i = 0
+    while i < len(summary_lines):
+        line = summary_lines[i]
+        if not line.strip():
+            pdf.ln(PARA_SPACING)
+            i += 1
+            continue
+        try:
+            if line.startswith("# "):
+                pdf.set_font("DejaVu", size=16)
+                pdf.multi_cell(0, 8, line[2:].strip())
+                pdf.set_font("DejaVu", size=12)
+            elif line.startswith("## "):
+                pdf.set_font("DejaVu", size=14)
+                pdf.multi_cell(0, 7, line[3:].strip())
+                pdf.set_font("DejaVu", size=12)
+            elif line.startswith("### "):
+                pdf.set_font("DejaVu", size=12)
+                pdf.multi_cell(0, 6, line[4:].strip())
+            elif line.startswith("- "):
+                _render_list_item(pdf, line[2:].strip())
+            else:
+                pdf.multi_cell(0, 6, line)
+        except FPDFException:
+            pdf.cell(0, 6, line, ln=1)
+        i += 1
 
-    lines = md.split("\n")
+    # ---- Render storyboard page ----
+    pdf.add_page()
+    pdf.set_font("DejaVu", size=12)
+    lines = storyboard_lines
     i = 0
     while i < len(lines):
         line = lines[i]
 
-        # Detect Markdown table blocks
         if (
             line.startswith("|")
             and i + 1 < len(lines)

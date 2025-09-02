@@ -425,7 +425,7 @@ if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]
         title="AI-Generated Influencer Brief (Director Mode)",
     )
     orientation_choice = st.selectbox(
-        "PDF orientation",
+        "Storyboard page orientation",
         ["Auto", "Portrait", "Landscape"],
         index=0,
     )
@@ -449,7 +449,7 @@ if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]
         mime="text/markdown",
     )
     st.download_button(
-        "⬇️ Download brief.pdf",
+        "⬇️ Download brief (summary + storyboard).pdf",
         data=pdf_bytes,
         file_name="brief.pdf",
         mime="application/pdf",
