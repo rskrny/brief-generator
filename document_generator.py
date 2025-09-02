@@ -1,3 +1,4 @@
+import json
 from fpdf import FPDF
 from typing import Any, Dict, List
 
@@ -14,7 +15,6 @@ class PDF(FPDF):
         self.set_font("DejaVu", size=12)
 
 def _safe_multi_cell(pdf: FPDF, w, h, txt, border=0, align="", fill=False):
-    # safer multicell wrapper to avoid cutoff
     pdf.multi_cell(w, h, txt, border=border, align=align, fill=fill)
 
 def _wrap_text(pdf: FPDF, max_width: float, text: str) -> List[str]:
@@ -39,11 +39,9 @@ def _render_list_item(pdf: FPDF, text: str, bullet: str = "-") -> None:
     max_width = epw - indent
     lines = _wrap_text(pdf, max_width, text)
 
-    # first line
     pdf.set_x(pdf.l_margin + PADDING / 2)
     _safe_multi_cell(pdf, max_width + indent, line_height, bullet_str + lines[0])
 
-    # wrapped lines
     for line in lines[1:]:
         pdf.set_x(pdf.l_margin + indent + PADDING / 2)
         _safe_multi_cell(pdf, max_width, line_height, line)
@@ -65,14 +63,12 @@ def make_brief_pdf(
 ) -> None:
     pdf = PDF(format="A4")
 
-    # Title
     pdf.set_font("DejaVu", "B", 16)
     pdf.cell(0, 10, "AI-Generated Influencer Brief", ln=True, align="C")
     pdf.ln(5)
-
     pdf.set_font("DejaVu", size=12)
 
-    # Summary text
+    # Summary
     summary_text = analyzer.get("summary", "")
     for line in summary_text.splitlines():
         if line.startswith("# "):
@@ -98,7 +94,7 @@ def make_brief_pdf(
 
     pdf.ln(SECTION_SPACING)
 
-    # Storyboard text
+    # Storyboard
     storyboard_text = analyzer.get("storyboard", "")
     for line in storyboard_text.splitlines():
         if line.startswith("# "):
@@ -135,3 +131,9 @@ def make_brief_pdf(
         pdf.set_x(pdf.l_margin + PADDING / 2)
 
     pdf.output(output_path)
+
+def brief_from_json_strings(analyzer_json: str, script_json: str, output_path: str) -> None:
+    """Wrapper for compatibility with app.py: takes JSON strings, parses, and calls make_brief_pdf."""
+    analyzer = json.loads(analyzer_json)
+    script = json.loads(script_json)
+    make_brief_pdf(analyzer=analyzer, script=script, output_path=output_path)
