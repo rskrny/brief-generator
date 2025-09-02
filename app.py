@@ -23,6 +23,7 @@ from prompts import (
     validate_script_json,
 )
 from document_generator import brief_from_json_strings, make_brief_pdf
+from web_utils import fetch_product_page_text
 
 
 # =========================
@@ -177,6 +178,7 @@ st.markdown("---")
 st.header("2) Target Product Facts")
 brand_name = st.text_input("Brand", value="", placeholder="Enter brand name")
 product_name = st.text_input("Product", value="", placeholder="Enter product name")
+product_page_url = st.text_input("Product page URL", value="", placeholder="https://…")
 
 if "claims_text" not in st.session_state:
     st.session_state["claims_text"] = ""
@@ -188,11 +190,27 @@ if "forbidden_text" not in st.session_state:
     )
 if "disclaimers_text" not in st.session_state:
     st.session_state["disclaimers_text"] = ""
+if "product_page_text" not in st.session_state:
+    st.session_state["product_page_text"] = ""
 
 if st.button("🔍 Research product facts"):
     if brand_name.strip() and product_name.strip():
+        page_text = ""
+        if product_page_url.strip():
+            try:
+                page_text = fetch_product_page_text(product_page_url.strip())
+                st.session_state["product_page_text"] = page_text
+            except Exception as e:
+                st.session_state["product_page_text"] = ""
+                st.warning(f"Failed to fetch product page: {e}")
+        else:
+            st.session_state["product_page_text"] = ""
         try:
-            messages = build_product_research_messages(brand_name.strip(), product_name.strip())
+            messages = build_product_research_messages(
+                brand_name.strip(),
+                product_name.strip(),
+                page_text=page_text or None,
+            )
             with st.spinner("Researching product facts…"):
                 research_json = call_gemini_json(messages=messages, model=model, temperature=temperature)
             try:
@@ -221,6 +239,10 @@ claims_text = st.text_area(
 )
 
 st.caption("Verify the factual accuracy of these claims before proceeding.")
+
+if st.session_state.get("product_page_text"):
+    with st.expander("Product page text (debug)", expanded=False):
+        st.text(st.session_state["product_page_text"])
 
 with st.expander("Advanced brand controls"):
     forbidden_text = st.text_area(
