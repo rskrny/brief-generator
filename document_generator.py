@@ -167,6 +167,8 @@ def make_brief_pdf(
             elif line.startswith("### "):
                 pdf.set_font("DejaVu", size=12)
                 pdf.multi_cell(0, 6, line[4:].strip())
+            elif line.startswith("- "):
+                _render_list_item(pdf, line[2:].strip())
             else:
                 pdf.multi_cell(0, 6, line)
         except FPDFException:
@@ -290,6 +292,41 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
             _render_table_row(pdf, headers, col_width, line_height)
             pdf.set_font("DejaVu", size=font_size)
         _render_table_row(pdf, row, col_width, line_height)
+
+
+# =========================
+# List helpers
+# =========================
+
+def _render_list_item(pdf: FPDF, text: str, bullet: str = "-") -> None:
+    """Render a markdown list item with proper bullet indentation."""
+    line_height = 6
+    bullet_str = f"{bullet} "
+    indent = pdf.get_string_width(bullet_str)
+    epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
+    max_width = epw - indent
+
+    start_x = pdf.get_x()
+    start_y = pdf.get_y()
+
+    try:
+        lines = pdf.multi_cell(max_width, line_height, text, split_only=True)
+    except FPDFException:
+        pdf.set_xy(start_x, start_y)
+        pdf.cell(0, line_height, f"{bullet_str}{text}", ln=1)
+        return
+
+    if start_y + line_height * len(lines) > pdf.page_break_trigger:
+        pdf.add_page()
+        start_x = pdf.get_x()
+        start_y = pdf.get_y()
+
+    pdf.set_xy(start_x, start_y)
+    pdf.cell(indent, line_height, bullet_str)
+    pdf.cell(max_width, line_height, lines[0], ln=1)
+    for line in lines[1:]:
+        pdf.set_x(pdf.l_margin + indent)
+        pdf.cell(max_width, line_height, line, ln=1)
 
 
 # =========================
