@@ -119,15 +119,14 @@ def make_brief_pdf(
     script: Dict[str, Any],
     product_facts: Dict[str, Any],
     title: str = "AI-Generated Influencer Brief",
-    orientation: Optional[str] = None,
-    column_threshold: int = 8,
+    orientation: Optional[str] = "P",
 ) -> bytes:
     """Generate a two-page PDF consisting of a summary and reference scene table.
 
     The first page contains only high-level information (header, product facts,
     reference video summary). The second page renders the scene-by-scene table
-    describing the reference video. ``orientation`` is determined from that
-    table unless explicitly provided.
+    describing the reference video. ``orientation`` defaults to portrait and is
+    applied to both pages.
     """
 
     # =========================
@@ -164,12 +163,7 @@ def make_brief_pdf(
     # =========================
     storyboard_lines = _scenes_table(analyzer)
 
-    # Determine orientation from storyboard table
-    if orientation is None:
-        max_cols = _max_table_columns("\n".join(storyboard_lines))
-        orientation = "L" if max_cols > column_threshold else "P"
-    else:
-        orientation = orientation[0].upper()
+    orientation = (orientation or "P")[0].upper()
 
     # Spacing constants
     PARA_SPACING = 5
@@ -273,30 +267,6 @@ def _parse_table_block(
         rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
         i += 1
     return header, rows, i
-
-
-def _max_table_columns(md: str) -> int:
-    """Return the maximum number of columns across all markdown tables."""
-    lines = md.split("\n")
-    max_cols = 0
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if (
-            line.startswith("|")
-            and i + 1 < len(lines)
-            and _TABLE_SEPARATOR_RE.match(lines[i + 1])
-        ):
-            cols = len([c for c in line.strip().strip("|").split("|")])
-            max_cols = max(max_cols, cols)
-            i += 2
-            while i < len(lines) and lines[i].startswith("|"):
-                cols = len([c for c in lines[i].strip().strip("|").split("|")])
-                max_cols = max(max_cols, cols)
-                i += 1
-            continue
-        i += 1
-    return max_cols
 
 
 def _split_row_cells(
