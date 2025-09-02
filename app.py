@@ -401,7 +401,12 @@ with col_out_a:
         if stills:
             st.subheader("Reference Stills")
             for s in stills:
-                caption = f"{s.get('t',0):.2f}s — {s.get('label','')}"
+                t = s.get("t", 0)
+                try:
+                    t = float(t)
+                except Exception:
+                    t = 0.0
+                caption = f"{t:.2f}s — {s.get('label','')}"
                 path = s.get("frame_path")
                 if path and os.path.exists(path):
                     st.image(path, caption=caption)
