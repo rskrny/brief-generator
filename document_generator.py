@@ -173,7 +173,7 @@ def make_brief_pdf(
         def footer(self) -> None:  # pragma: no cover - simple rendering
             self.set_y(-15)
             self.set_font("DejaVu", size=8)
-            self.cell(0, 10, f"{self.page_no()}/{{nb}}", align="C")
+            _safe_multi_cell(self, 0, 10, f"{self.page_no()}/{{nb}}", align="C")
 
     pdf = BriefPDF(orientation=orientation)
     pdf.set_margins(15, 15, 15)
@@ -195,19 +195,19 @@ def make_brief_pdf(
             continue
         if line.startswith("# "):
             pdf.set_font("DejaVu", size=16)
-            pdf.multi_cell(pdf.epw, 8, line[2:].strip())
+            _safe_multi_cell(pdf, pdf.epw, 8, line[2:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("## "):
             pdf.set_font("DejaVu", size=14)
-            pdf.multi_cell(pdf.epw, 7, line[3:].strip())
+            _safe_multi_cell(pdf, pdf.epw, 7, line[3:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("### "):
             pdf.set_font("DejaVu", size=12)
-            pdf.multi_cell(pdf.epw, 6, line[4:].strip())
+            _safe_multi_cell(pdf, pdf.epw, 6, line[4:].strip())
         elif line.startswith("- "):
             _render_list_item(pdf, line[2:].strip())
         else:
-            pdf.multi_cell(pdf.epw, 6, line)
+            _safe_multi_cell(pdf, pdf.epw, 6, line)
         i += 1
 
     # ---- Render storyboard page ----
@@ -234,19 +234,19 @@ def make_brief_pdf(
             continue
         if line.startswith("# "):
             pdf.set_font("DejaVu", size=16)
-            pdf.multi_cell(pdf.epw, 8, line[2:].strip())
+            _safe_multi_cell(pdf, pdf.epw, 8, line[2:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("## "):
             pdf.set_font("DejaVu", size=14)
-            pdf.multi_cell(pdf.epw, 7, line[3:].strip())
+            _safe_multi_cell(pdf, pdf.epw, 7, line[3:].strip())
             pdf.set_font("DejaVu", size=12)
         elif line.startswith("### "):
             pdf.set_font("DejaVu", size=12)
-            pdf.multi_cell(pdf.epw, 6, line[4:].strip())
+            _safe_multi_cell(pdf, pdf.epw, 6, line[4:].strip())
         elif line.startswith("- "):
             _render_list_item(pdf, line[2:].strip())
         else:
-            pdf.multi_cell(pdf.epw, 6, line)
+            _safe_multi_cell(pdf, pdf.epw, 6, line)
         i += 1
 
     pdf_bytes = pdf.output(dest="S")
@@ -269,6 +269,36 @@ def _parse_table_block(
     return header, rows, i
 
 
+def _wrap_text(pdf: FPDF, width: float, text: str) -> List[str]:
+    """Wrap *text* so that each line fits within *width*.
+
+    Attempts to use FPDF's native line splitter first; if it fails due to an
+    ``FPDFException`` (often triggered by extremely long tokens), falls back to
+    ``textwrap.wrap`` with ``break_long_words=True``. The resulting lines are
+    guaranteed not to exceed *width*.
+    """
+
+    try:
+        return pdf.multi_cell(width, 1, text, border=0, split_only=True)
+    except FPDFException:
+        char_w = pdf.get_string_width("M") or 1
+        max_chars = max(int(width / char_w), 1)
+        lines = textwrap.wrap(text, width=max_chars, break_long_words=True)
+        while any(pdf.get_string_width(l) > width for l in lines) and max_chars > 1:
+            max_chars -= 1
+            lines = textwrap.wrap(text, width=max_chars, break_long_words=True)
+        return lines
+
+
+def _safe_multi_cell(
+    pdf: FPDF, width: float, line_height: float, text: str, **kwargs: Any
+) -> None:
+    """Render text using ``multi_cell`` with manual wrapping fallback."""
+
+    lines = _wrap_text(pdf, width, text)
+    for line in lines:
+        pdf.multi_cell(width, line_height, line, **kwargs)
+
 def _split_row_cells(
     pdf: FPDF, cells: List[Any], col_widths: List[float], line_height: float
 ) -> Tuple[List[Any], float]:
@@ -284,10 +314,7 @@ def _split_row_cells(
             max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
         else:
             text = "" if cell is None else str(cell)
-            try:
-                lines = pdf.multi_cell(cw, line_height, text, border=0, split_only=True)
-            except FPDFException:
-                lines = [text]
+            lines = _wrap_text(pdf, cw, text)
             cell_lines.append(lines)
             max_lines = max(max_lines, len(lines))
     return cell_lines, line_height * max_lines
@@ -326,7 +353,7 @@ def _render_table_row(
             else:
                 border = "LR"
             pdf.set_xy(x, y_start + line_idx * line_height)
-            pdf.multi_cell(cw, line_height, txt, border=border)
+            _safe_multi_cell(pdf, cw, line_height, txt, border=border)
             x += cw
     pdf.set_xy(x_start, y_start + row_height)
     return row_height
@@ -409,8 +436,12 @@ def _render_list_item(pdf: FPDF, text: str, bullet: str = "-") -> None:
     epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
     max_width = epw - indent
 
-    pdf.cell(indent, line_height, bullet_str)
-    pdf.multi_cell(max_width, line_height, text)
+    lines = _wrap_text(pdf, max_width, text)
+    first = bullet_str + (lines[0] if lines else "")
+    _safe_multi_cell(pdf, epw, line_height, first)
+    for line in lines[1:]:
+        pdf.set_x(pdf.l_margin + indent)
+        _safe_multi_cell(pdf, max_width, line_height, line)
 
 
 # =========================
