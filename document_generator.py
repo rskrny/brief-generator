@@ -299,8 +299,11 @@ def _safe_multi_cell(
     """Render text using ``multi_cell`` with manual wrapping fallback."""
 
     lines = _wrap_text(pdf, width, text)
-    for line in lines:
+    start_x = pdf.get_x()
+    for i, line in enumerate(lines):
         pdf.multi_cell(width, line_height, line, **kwargs)
+        if i < len(lines) - 1:
+            pdf.set_x(start_x)
 
 def _split_row_cells(
     pdf: FPDF, cells: List[Any], col_widths: List[float], line_height: float
