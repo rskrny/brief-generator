@@ -332,6 +332,20 @@ def _safe_multi_cell(pdf: FPDF, width: float, line_height: float, text: str, **k
         if i < len(lines) - 1:
             pdf.set_x(start_x)
 
+
+def _render_list_item(
+    pdf: FPDF, text: str, bullet: str = "\u2022", line_height: float = 6
+) -> None:
+    """Render a bullet list item ensuring wrapped text stays within margins."""
+
+    bullet_text = f"{bullet} "
+    bullet_width = pdf.get_string_width(bullet_text)
+    start_x = pdf.get_x()
+
+    pdf.cell(bullet_width, line_height, bullet_text)
+    pdf.set_x(start_x + bullet_width)
+    _safe_multi_cell(pdf, pdf.epw - bullet_width, line_height, text)
+
 def _split_row_cells(
     pdf: FPDF, cells: List[Any], col_widths: List[float], line_height: float
 ) -> Tuple[List[Any], float]:
