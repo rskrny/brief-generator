@@ -191,6 +191,9 @@ def make_brief_pdf(
         pdf.add_font("DejaVu", "", str(font_path), uni=True)
         if bold_path.exists():
             pdf.add_font("DejaVu", "B", str(bold_path), uni=True)
+        else:
+            # Register "B" style pointing to the same file so bold can be selected
+            pdf.add_font("DejaVu", "B", str(font_path), uni=True)
         pdf.set_font("DejaVu", size=12)
     else:
         pdf.set_font("Helvetica", size=12)
@@ -407,6 +410,11 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     font_size = 10
     line_height = 6
 
+    # Store original font settings to restore later
+    original_family = pdf.font_family
+    original_style = pdf.font_style
+    original_size = pdf.font_size_pt
+
     epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin) - PADDING
     n = max(len(headers), 1)
     base = epw / n
@@ -414,16 +422,22 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     col_widths = [base for _ in headers]
 
     if headers:
-        # Use bold variant if available, otherwise fall back to a core font
-        if f"{pdf.font_family}B" in pdf.fonts:
-            pdf.set_font(pdf.font_family, style="B", size=font_size)
+        # Use bold style if available without switching font families
+        if f"{original_family}B" in pdf.fonts:
+            pdf.set_font(original_family, style="B", size=font_size)
         else:
-            pdf.set_font("Helvetica", style="B", size=font_size)
+            pdf.set_font(original_family, style=original_style, size=font_size)
+
         _render_table_row(pdf, headers, col_widths, line_height)
-        pdf.set_font(pdf.font_family, size=font_size)
+
+        # Restore original style for table body
+        pdf.set_font(original_family, style=original_style, size=font_size)
 
     for row in rows:
         _render_table_row(pdf, row, col_widths, line_height)
+
+    # Restore original font settings after the table
+    pdf.set_font(original_family, style=original_style, size=original_size)
 
 # ---------- Analyzer → Markdown helpers ----------
 def _analyzer_global_summary(analyzer: Dict[str, Any]) -> List[str]:
