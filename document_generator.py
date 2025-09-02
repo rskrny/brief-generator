@@ -232,23 +232,7 @@ def _render_table_row(
     cells: List[str],
     col_width: float,
     line_height: float,
-    rotate: bool = False,
 ) -> float:
-    if rotate:
-        x_start = pdf.get_x()
-        y_start = pdf.get_y()
-        max_height = 0.0
-        for cell in cells:
-            x = pdf.get_x()
-            y = pdf.get_y()
-            with pdf.rotation(90, x + col_width / 2, y + col_width / 2):
-                pdf.multi_cell(line_height, col_width, cell, border=1)
-            cell_height = col_width
-            pdf.set_xy(x + col_width, y)
-            max_height = max(max_height, cell_height)
-        pdf.set_xy(x_start, y_start + max_height)
-        return max_height
-
     cell_lines, row_height = _split_row_cells(pdf, cells, col_width, line_height)
     max_lines = int(row_height / line_height)
     x_start = pdf.get_x()
@@ -283,15 +267,19 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
         font_size = 10
     if col_width < 20:
         font_size = 8
+    if col_width < 15:
+        font_size = 6
     line_height = font_size * 0.5
-    rotate_headers = col_width < 15
 
     # Normalize row lengths
     headers = headers + [""] * (col_count - len(headers))
     rows = [r + [""] * (col_count - len(r)) for r in rows]
 
     pdf.set_font("DejaVu", style="B", size=font_size)
-    _render_table_row(pdf, headers, col_width, line_height, rotate=rotate_headers)
+    _, header_height = _split_row_cells(pdf, headers, col_width, line_height)
+    if pdf.get_y() + header_height > pdf.page_break_trigger:
+        pdf.add_page()
+    _render_table_row(pdf, headers, col_width, line_height)
     pdf.set_font("DejaVu", size=font_size)
 
     for row in rows:
@@ -299,7 +287,7 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
         if pdf.get_y() + row_height > pdf.page_break_trigger:
             pdf.add_page()
             pdf.set_font("DejaVu", style="B", size=font_size)
-            _render_table_row(pdf, headers, col_width, line_height, rotate=rotate_headers)
+            _render_table_row(pdf, headers, col_width, line_height)
             pdf.set_font("DejaVu", size=font_size)
         _render_table_row(pdf, row, col_width, line_height)
 
