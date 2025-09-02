@@ -175,7 +175,8 @@ def make_brief_pdf(
     class BriefPDF(FPDF):
         def footer(self) -> None:
             self.set_y(-15)
-            self.set_font("DejaVu", size=8)
+            # Use whichever font family is active to avoid missing-font errors
+            self.set_font(self.font_family, size=8)
             _safe_multi_cell(self, 0, 10, f"{self.page_no()}/{{nb}}", align="C")
 
     pdf = BriefPDF(orientation=orientation)
@@ -185,8 +186,11 @@ def make_brief_pdf(
 
     # Font (bundled DejaVu if present; fall back to core if missing)
     font_path = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
+    bold_path = Path(__file__).parent / "fonts" / "DejaVuSans-Bold.ttf"
     if font_path.exists():
         pdf.add_font("DejaVu", "", str(font_path), uni=True)
+        if bold_path.exists():
+            pdf.add_font("DejaVu", "B", str(bold_path), uni=True)
         pdf.set_font("DejaVu", size=12)
     else:
         pdf.set_font("Helvetica", size=12)
@@ -410,7 +414,11 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     col_widths = [base for _ in headers]
 
     if headers:
-        pdf.set_font(pdf.font_family, style="B", size=font_size)
+        # Use bold variant if available, otherwise fall back to a core font
+        if f"{pdf.font_family}B" in pdf.fonts:
+            pdf.set_font(pdf.font_family, style="B", size=font_size)
+        else:
+            pdf.set_font("Helvetica", style="B", size=font_size)
         _render_table_row(pdf, headers, col_widths, line_height)
         pdf.set_font(pdf.font_family, size=font_size)
 
