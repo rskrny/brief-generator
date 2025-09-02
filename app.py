@@ -10,6 +10,7 @@ import json
 import time
 import traceback
 from typing import Optional, List, Dict
+import base64
 
 import streamlit as st
 import google.generativeai as genai
@@ -21,7 +22,7 @@ from prompts import (
     validate_analyzer_json,
     validate_script_json,
 )
-from document_generator import brief_from_json_strings
+from document_generator import brief_from_json_strings, make_brief_pdf
 
 
 # =========================
@@ -373,11 +374,17 @@ with col_out_b:
         st.info("Generate the script to see results here.")
 
 st.markdown("---")
-st.subheader("📄 Export Brief (Markdown)")
+st.subheader("📄 Export Brief")
 if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]:
     md = brief_from_json_strings(
         analyzer_json_str=st.session_state["analyzer_json_str"],
         script_json_str=st.session_state["script_json_str"],
+        product_facts=product_facts,
+        title="AI-Generated Influencer Brief (Director Mode)",
+    )
+    pdf_bytes = make_brief_pdf(
+        analyzer=st.session_state["analyzer_parsed"],
+        script=st.session_state["script_parsed"],
         product_facts=product_facts,
         title="AI-Generated Influencer Brief (Director Mode)",
     )
@@ -387,7 +394,17 @@ if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]
         file_name="brief.md",
         mime="text/markdown",
     )
+    st.download_button(
+        "⬇️ Download brief.pdf",
+        data=pdf_bytes,
+        file_name="brief.pdf",
+        mime="application/pdf",
+    )
     with st.expander("Preview Markdown", expanded=False):
         st.markdown(md)
+    with st.expander("Preview PDF", expanded=False):
+        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+        pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
 else:
     st.info("Run Analyzer and Script to export a brief.")
