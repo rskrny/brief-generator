@@ -336,6 +336,51 @@ def build_script_generator_messages(
 
 
 # ----------------------------
+# Public builder (Product Research)
+# ----------------------------
+
+def build_product_research_messages(brand: str, product: str):
+    """Prompt the model to gather marketing-compliant product facts.
+
+    Returns a messages list asking for JSON with three lists:
+    - approved_claims: safe claims we can state
+    - required_disclaimers: disclaimers that must accompany those claims
+    - forbidden: risky claims to avoid
+
+    The model must respond with JSON only; empty lists are allowed if
+    information is unavailable.
+    """
+
+    user_content = dedent(
+        f"""
+        Research factual, legally compliant marketing claims for the
+        product "{product}" from brand "{brand}".
+
+        Return JSON with exactly these fields:
+        - "approved_claims": list of short, substantiated marketing claims
+        - "required_disclaimers": list of disclaimers required for those claims
+        - "forbidden": list of risky or prohibited claims to avoid
+
+        If unsure or no data, use empty lists. Output JSON only with no
+        commentary or extra keys.
+        """
+    ).strip()
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a compliance-focused marketing assistant. "
+                "Respond with JSON only."
+            ),
+        },
+        {"role": "user", "content": user_content},
+    ]
+
+    return messages
+
+
+# ----------------------------
 # Optional: tiny validators (client-side)
 # ----------------------------
 

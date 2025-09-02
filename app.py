@@ -17,6 +17,7 @@ import google.generativeai as genai
 from prompts import (
     build_analyzer_messages,
     build_script_generator_messages,
+    build_product_research_messages,
     validate_analyzer_json,
     validate_script_json,
 )
@@ -172,6 +173,35 @@ product_name = st.text_input("Product", value="", placeholder="Enter product nam
 
 if "claims_text" not in st.session_state:
     st.session_state["claims_text"] = ""
+if "forbidden_text" not in st.session_state:
+    st.session_state["forbidden_text"] = (
+        "medical/health claims without substantiation\n"
+        "superlatives without proof\n"
+        "comparative claims without head-to-head evidence"
+    )
+if "disclaimers_text" not in st.session_state:
+    st.session_state["disclaimers_text"] = ""
+
+if st.button("🔍 Research product facts"):
+    if brand_name.strip() and product_name.strip():
+        try:
+            messages = build_product_research_messages(brand_name.strip(), product_name.strip())
+            with st.spinner("Researching product facts…"):
+                research_json = call_gemini_json(messages=messages, model=model, temperature=temperature)
+            try:
+                data = json.loads(research_json)
+                st.session_state["product_research"] = data
+                st.session_state["claims_text"] = "\n".join(data.get("approved_claims", []))
+                st.session_state["forbidden_text"] = "\n".join(data.get("forbidden", []))
+                st.session_state["disclaimers_text"] = "\n".join(
+                    data.get("required_disclaimers", [])
+                )
+            except Exception:
+                st.error("Research returned invalid JSON")
+        except Exception as e:
+            st.error(f"Product research failed: {e}")
+    else:
+        st.warning("Enter brand and product first.")
 
 claims_text = st.text_area(
     "Approved claims (whitelist, one per line)",
@@ -180,36 +210,13 @@ claims_text = st.text_area(
     placeholder="List approved claims, one per line",
 )
 
-if st.button("🔍 Research product facts"):
-    if brand_name.strip() and product_name.strip():
-        try:
-            messages = [
-                {
-                    "role": "user",
-                    "content": (
-                        f"Provide concise, factual marketing claims for the {brand_name} {product_name}.\n"
-                        "Return JSON with a 'claims' list."
-                    ),
-                }
-            ]
-            with st.spinner("Researching product facts…"):
-                research_json = call_gemini_json(messages=messages, model=model, temperature=temperature)
-            try:
-                data = json.loads(research_json)
-                st.session_state["claims_text"] = "\n".join(data.get("claims", []))
-            except Exception:
-                st.error("Research returned invalid JSON")
-        except Exception as e:
-            st.error(f"Product research failed: {e}")
-    else:
-        st.warning("Enter brand and product first.")
 with st.expander("Advanced brand controls"):
     forbidden_text = st.text_area(
         "Forbidden claims",
         height=80,
-        value="medical/health claims without substantiation\nsuperlatives without proof\ncomparative claims without head-to-head evidence",
+        key="forbidden_text",
     )
-    disclaimers_text = st.text_area("Required disclaimers", height=60, value="")
+    disclaimers_text = st.text_area("Required disclaimers", height=60, key="disclaimers_text")
     tone = st.text_input("Voice tone", value="conversational, direct, confident; no hype; no cringe")
     must_include = st.text_area("Must-include phrases (one per line)", value="")
     avoid_words = st.text_area("Avoid words (one per line)", value="insane\nultimate\nbest ever")
@@ -224,6 +231,15 @@ approved_claims = [x.strip() for x in claims_text.splitlines() if x.strip()]
 forbidden_claims = [x.strip() for x in forbidden_text.splitlines() if x.strip()] if 'forbidden_text' in locals() else []
 required_disclaimers = [x.strip() for x in (disclaimers_text.splitlines() if 'disclaimers_text' in locals() else []) if x.strip()]
 cta_variants = [x.strip() for x in (cta_variant_text.splitlines() if 'cta_variant_text' in locals() else []) if x.strip()]
+
+# Fallback to researched data if user didn't provide their own
+research_packet = st.session_state.get("product_research", {})
+if not approved_claims:
+    approved_claims = research_packet.get("approved_claims", [])
+if not forbidden_claims:
+    forbidden_claims = research_packet.get("forbidden", [])
+if not required_disclaimers:
+    required_disclaimers = research_packet.get("required_disclaimers", [])
 
 brand_voice = {
     "tone": (tone if 'tone' in locals() else "conversational, direct, confident; no hype; no cringe"),
