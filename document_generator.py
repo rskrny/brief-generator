@@ -72,6 +72,8 @@ def make_brief_markdown(
     lines.append("")
     lines.extend(_scenes_table(analyzer))
     lines.append("")
+    lines.extend(_stills_section(analyzer))
+    lines.append("")
 
     # Script plan
     lines.append("## New Script for Target Brand/Product")
@@ -137,6 +139,23 @@ def make_brief_pdf(
                 pdf.multi_cell(0, 6, line)
         except FPDFException:
             pdf.cell(0, 6, line, ln=1)
+    stills = analyzer.get("key_frames", []) or []
+    if stills:
+        pdf.add_page()
+        pdf.set_font("DejaVu", size=14)
+        pdf.multi_cell(0, 7, "Reference Stills")
+        pdf.set_font("DejaVu", size=12)
+        for s in stills:
+            t = _num(s.get("t"))
+            caption = f"{t:.2f}s — {s.get('label','')}" if t is not None else s.get('label','')
+            pdf.multi_cell(0, 6, caption)
+            img = s.get("frame_path") or s.get("image") or s.get("image_path")
+            if img and Path(img).exists():
+                try:
+                    pdf.image(img, w=100)
+                except FPDFException:
+                    pdf.multi_cell(0, 6, "(image failed)")
+            pdf.ln(2)
 
     pdf_bytes = pdf.output(dest="S")
     return bytes(pdf_bytes)
@@ -245,6 +264,19 @@ def _scenes_table(analyzer: Dict[str, Any]) -> List[str]:
         ))
     if len(scenes) == 0:
         lines.append("> No scenes provided.")
+    return lines
+
+
+def _stills_section(analyzer: Dict[str, Any]) -> List[str]:
+    stills = analyzer.get("key_frames", []) or []
+    lines = ["### Reference Stills"]
+    if not stills:
+        lines.append("> No still frames captured.")
+        return lines
+    for s in stills:
+        t = _num(s.get("t"))
+        label = s.get("label", "")
+        lines.append(f"- {t:.2f}s — {label}" if t is not None else f"- {label}")
     return lines
 
 

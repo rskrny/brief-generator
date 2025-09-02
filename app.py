@@ -24,6 +24,7 @@ from prompts import (
 )
 from document_generator import brief_from_json_strings, make_brief_pdf
 from web_utils import fetch_product_page_text
+from video_processor import download_video, extract_screenshots
 
 
 # =========================
@@ -216,12 +217,18 @@ if st.button("🔍 Research product facts"):
             try:
                 data = json.loads(research_json)
                 st.session_state["product_research"] = data
-                st.session_state["claims_text"] = "\n".join(data.get("approved_claims", []))
-                st.session_state["forbidden_text"] = "\n".join(data.get("forbidden", []))
-                st.session_state["disclaimers_text"] = "\n".join(
-                    data.get("required_disclaimers", [])
-                )
-                st.info("Review and verify the claims below before proceeding.")
+                approved_claims_list = data.get("approved_claims", []) or []
+                forbidden_list = data.get("forbidden", []) or []
+                disclaimers_list = data.get("required_disclaimers", []) or []
+
+                st.session_state["claims_text"] = "\n".join(approved_claims_list)
+                st.session_state["forbidden_text"] = "\n".join(forbidden_list)
+                st.session_state["disclaimers_text"] = "\n".join(disclaimers_list)
+
+                if approved_claims_list or forbidden_list or disclaimers_list:
+                    st.info("Review and verify the claims below before proceeding.")
+                else:
+                    st.warning("No product facts found; verify the URL or enter claims manually.")
             except Exception:
                 st.error("Research returned invalid JSON")
         except EmptyGeminiResponseError:
@@ -320,6 +327,23 @@ with analyze_col:
             analyzer_parsed = json.loads(analyzer_json_str)
             errs = validate_analyzer_json(analyzer_parsed)
 
+            stills = analyzer_parsed.get("key_frames", []) or []
+            if video_url and stills:
+                try:
+                    video_path, _ = download_video(video_url)
+                    if video_path:
+                        timestamps = []
+                        for s in stills:
+                            try:
+                                timestamps.append(float(s.get("t", 0)))
+                            except Exception:
+                                timestamps.append(0.0)
+                        paths = extract_screenshots(video_path, timestamps)
+                        for s, p in zip(stills, paths):
+                            s["frame_path"] = p
+                except Exception as e:
+                    st.warning(f"Screenshot capture failed: {e}")
+
             st.session_state["analyzer_json_str"] = analyzer_json_str
             st.session_state["analyzer_parsed"] = analyzer_parsed
 
@@ -373,6 +397,16 @@ with col_out_a:
     st.subheader("Analyzer JSON")
     if st.session_state["analyzer_parsed"] is not None:
         st.json(st.session_state["analyzer_parsed"])
+        stills = st.session_state["analyzer_parsed"].get("key_frames", []) or []
+        if stills:
+            st.subheader("Reference Stills")
+            for s in stills:
+                caption = f"{s.get('t',0):.2f}s — {s.get('label','')}"
+                path = s.get("frame_path")
+                if path and os.path.exists(path):
+                    st.image(path, caption=caption)
+                else:
+                    st.write(caption)
         st.download_button(
             "⬇️ Download analyzer.json",
             data=st.session_state["analyzer_json_str"].encode("utf-8"),

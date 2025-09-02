@@ -98,7 +98,10 @@ ANALYZER_JSON_SCHEMA = dedent("""
   "transferable_patterns": {
     "must_keep": [],
     "rewrite": []
-  }
+  },
+  "key_frames": [
+    {"t": 0.0, "label": "", "reason": "", "frame_path": null}
+  ]
 }
 """).strip()
 
@@ -169,9 +172,9 @@ SCRIPT_JSON_SCHEMA = dedent("""
 
 
 ANALYZER_SYSTEM_PREAMBLE = dedent("""
-You are a Film Director + Editor + Script Supervisor analyzing a short-form video to produce a director-ready breakdown. 
-Think step-by-step, but OUTPUT MUST BE JSON ONLY and must match the provided schema exactly. 
-If you cannot verify a field, set a safe default or null. Do not invent on-screen text.
+You are a Film Director + Editor + Script Supervisor dissecting a short-form video into a director-ready breakdown.
+Think step-by-step, capture the creator's style, and mark pivotal frames for screenshots, but OUTPUT MUST BE JSON ONLY and match the provided schema exactly.
+If you cannot verify a field, set a safe default or null. Never invent on-screen text.
 """).strip()
 
 ANALYZER_USER_INSTRUCTIONS = dedent(f"""
@@ -180,13 +183,14 @@ Return ONLY valid JSON adhering to this schema:
 {ANALYZER_JSON_SCHEMA}
 
 Rules:
-1) Do NOT hallucinate on-screen text. If unknown, use [] for "on_screen_text" in that scene.
-2) Every scene must include: start_s, end_s, shot, camera, framing, action, dialogue_vo (or ""), music_moment, transition_out, retention_device.
-3) Populate influencer_DNA from delivery evidence: persona_tags, energy_1to5, pace, rhetoric, eye_contact_pct.
-4) Create a "beats" array marking hooks, emphatic punches, reveals, and CTA entries by timestamp.
-5) Note compliance risks in "compliance.forbidden_claims".
-6) Durations must be consistent; last scene end_s equals video duration.
-7) OUTPUT JSON ONLY. No markdown. No commentary.
+1) Provide accurate video_metadata.duration_s and ensure the last scene's end_s equals this duration.
+2) Every scene is a shooting-script entry: include start_s, end_s, shot, lens_feel, camera, framing, location, lighting, action, dialogue_vo (or ""), on_screen_text, sfx, music_moment, transition_out, retention_device, product_focus, disclaimer.
+3) Populate influencer_DNA from delivery evidence: persona_tags, energy_1to5, pace, sentiment_arc, delivery (POV, eye_contact_pct, gesture_style, rhetoric), and editing_style (cuts, text_style, anim, color_grade).
+4) Create a beats array marking hooks, emphatic punches, reveals, and CTA entries by timestamp.
+5) Note compliance risks in compliance.forbidden_claims and required_disclaimers.
+6) Flag reusable techniques in transferable_patterns.must_keep and call out non-transferable elements in transferable_patterns.rewrite.
+7) Identify 3-5 key_frames for screenshot capture: each with t, label (what is shown), and reason (why it's pivotal). Set frame_path to null.
+8) OUTPUT JSON ONLY. No markdown. No commentary.
 """).strip()
 
 
@@ -427,6 +431,14 @@ def validate_analyzer_json(parsed: dict) -> list[str]:
             errs.append(f"Last scene end_s ({last_end}) != duration_s ({duration}).")
     except Exception:
         pass
+    kf = parsed.get("key_frames")
+    if kf and isinstance(kf, list):
+        for item in kf:
+            try:
+                float(item.get("t"))
+            except Exception:
+                errs.append("key_frames entries require numeric 't'.")
+                break
     return errs
 
 
