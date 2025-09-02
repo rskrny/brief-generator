@@ -102,8 +102,19 @@ def make_brief_pdf(
     script: Dict[str, Any],
     product_facts: Dict[str, Any],
     title: str = "AI-Generated Influencer Brief",
+    orientation: Optional[str] = None,
+    column_threshold: int = 8,
 ) -> bytes:
     """Generate a PDF version of the brief.
+
+    Parameters
+    ----------
+    orientation:
+        Page orientation. ``"P"``/``"portrait"`` for portrait, ``"L"``/``"landscape"``
+        for landscape. If ``None`` (default) the orientation is automatically
+        chosen based on the widest table in the document: if any table has more
+        than ``column_threshold`` columns the page will be rendered in
+        landscape mode.
 
     This is a lightweight conversion that renders the markdown produced by
     :func:`make_brief_markdown` into a text PDF using the bundled DejaVuSans
@@ -114,11 +125,18 @@ def make_brief_pdf(
         analyzer=analyzer, script=script, product_facts=product_facts, title=title
     )
 
-    pdf = FPDF()
+    if orientation is None:
+        max_cols = _max_table_columns(md)
+        orientation = "L" if max_cols > column_threshold else "P"
+    else:
+        orientation = orientation[0].upper()
+
+    pdf = FPDF(orientation=orientation)
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     font_path = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
     pdf.add_font("DejaVu", "", str(font_path), uni=True)
+    pdf.add_font("DejaVu", "B", str(font_path), uni=True)
     pdf.set_font("DejaVu", size=12)
 
     lines = md.split("\n")
@@ -173,6 +191,26 @@ def _parse_table_block(lines: List[str], start: int) -> (List[str], List[List[st
     return header, rows, i
 
 
+def _max_table_columns(md: str) -> int:
+    """Return the maximum number of columns across all markdown tables."""
+    lines = md.split("\n")
+    max_cols = 0
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("|") and i + 1 < len(lines) and _TABLE_SEPARATOR_RE.match(lines[i + 1]):
+            cols = len([c for c in line.strip().strip("|").split("|")])
+            max_cols = max(max_cols, cols)
+            i += 2
+            while i < len(lines) and lines[i].startswith("|"):
+                cols = len([c for c in lines[i].strip().strip("|").split("|")])
+                max_cols = max(max_cols, cols)
+                i += 1
+            continue
+        i += 1
+    return max_cols
+
+
 def _calc_row_height(pdf: FPDF, cells: List[str], col_width: float, line_height: float) -> float:
     heights = []
     for cell in cells:
@@ -181,17 +219,29 @@ def _calc_row_height(pdf: FPDF, cells: List[str], col_width: float, line_height:
     return max(heights or [line_height])
 
 
-def _render_table_row(pdf: FPDF, cells: List[str], col_width: float, line_height: float) -> float:
+def _render_table_row(
+    pdf: FPDF,
+    cells: List[str],
+    col_width: float,
+    line_height: float,
+    rotate: bool = False,
+) -> float:
     x_start = pdf.get_x()
     y_start = pdf.get_y()
     max_height = 0.0
     for cell in cells:
         x = pdf.get_x()
         y = pdf.get_y()
-        pdf.multi_cell(col_width, line_height, cell, border=1)
-        cell_height = pdf.get_y() - y
+        if rotate:
+            with pdf.rotation(90, x + col_width / 2, y + col_width / 2):
+                pdf.multi_cell(line_height, col_width, cell, border=1)
+            cell_height = col_width
+            pdf.set_xy(x + col_width, y)
+        else:
+            pdf.multi_cell(col_width, line_height, cell, border=1)
+            cell_height = pdf.get_y() - y
+            pdf.set_xy(x + col_width, y)
         max_height = max(max_height, cell_height)
-        pdf.set_xy(x + col_width, y)
     pdf.set_xy(x_start, y_start + max_height)
     return max_height
 
@@ -199,24 +249,32 @@ def _render_table_row(pdf: FPDF, cells: List[str], col_width: float, line_height
 def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     col_count = max(len(headers), max((len(r) for r in rows), default=0))
     epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
-    col_width = epw / col_count
-    line_height = 6
+    col_width = epw / col_count if col_count else epw
+
+    # Reduce font size when columns get narrow
+    font_size = 12
+    if col_width < 25:
+        font_size = 10
+    if col_width < 20:
+        font_size = 8
+    line_height = font_size * 0.5
+    rotate_headers = col_width < 15
 
     # Normalize row lengths
     headers = headers + [""] * (col_count - len(headers))
     rows = [r + [""] * (col_count - len(r)) for r in rows]
 
-    pdf.set_font("DejaVu", style="B", size=12)
-    _render_table_row(pdf, headers, col_width, line_height)
-    pdf.set_font("DejaVu", size=12)
+    pdf.set_font("DejaVu", style="B", size=font_size)
+    _render_table_row(pdf, headers, col_width, line_height, rotate=rotate_headers)
+    pdf.set_font("DejaVu", size=font_size)
 
     for row in rows:
         row_height = _calc_row_height(pdf, row, col_width, line_height)
         if pdf.get_y() + row_height > pdf.page_break_trigger:
             pdf.add_page()
-            pdf.set_font("DejaVu", style="B", size=12)
-            _render_table_row(pdf, headers, col_width, line_height)
-            pdf.set_font("DejaVu", size=12)
+            pdf.set_font("DejaVu", style="B", size=font_size)
+            _render_table_row(pdf, headers, col_width, line_height, rotate=rotate_headers)
+            pdf.set_font("DejaVu", size=font_size)
         _render_table_row(pdf, row, col_width, line_height)
 
 

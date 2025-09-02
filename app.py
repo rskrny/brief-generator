@@ -410,11 +410,23 @@ if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]
         product_facts=product_facts,
         title="AI-Generated Influencer Brief (Director Mode)",
     )
+    orientation_choice = st.selectbox(
+        "PDF orientation",
+        ["Auto", "Portrait", "Landscape"],
+        index=0,
+    )
+    orientation_arg = None
+    if orientation_choice == "Portrait":
+        orientation_arg = "P"
+    elif orientation_choice == "Landscape":
+        orientation_arg = "L"
+
     pdf_bytes = make_brief_pdf(
         analyzer=st.session_state["analyzer_parsed"],
         script=st.session_state["script_parsed"],
         product_facts=product_facts,
         title="AI-Generated Influencer Brief (Director Mode)",
+        orientation=orientation_arg,
     )
     st.download_button(
         "⬇️ Download brief.md",
