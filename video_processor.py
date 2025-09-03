@@ -6,6 +6,8 @@ from typing import Tuple, Optional
 
 import yt_dlp
 import google.generativeai as genai
+# Correctly import the 'File' type for type hinting
+from google.generativeai.files import File
 
 TEMP_DIR = tempfile.gettempdir()
 
@@ -59,7 +61,8 @@ def cleanup_temp_dir():
             print(f"Error removing temp file {f}: {e}")
 
 
-def upload_to_gemini(path: str, mime_type: str) -> Optional[genai.client.File]:
+# Correct the type hint from Optional[genai.client.File] to Optional[File]
+def upload_to_gemini(path: str, mime_type: str) -> Optional[File]:
     """Uploads a file to Gemini."""
     try:
         return genai.upload_file(path=path, mime_type=mime_type)
