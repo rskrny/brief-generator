@@ -108,6 +108,11 @@ def _draw_title(pdf: FPDF, title: str, product_facts: Dict[str, Any]):
 
 def _draw_info_section(pdf: FPDF, title: str, content_lines: List[str]):
     """Draws a full-width information section with a title and content."""
+    # Check if there is enough space, add a new page if needed
+    required_height = 12 + len(content_lines) * 5 # Rough estimate
+    if pdf.get_y() + required_height > pdf.page_break_trigger:
+        pdf.add_page()
+
     pdf.set_font(FONT_FAMILY, "B", 12)
     pdf.cell(0, 8, title, 0, 1)
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + pdf.w - pdf.l_margin - pdf.r_margin, pdf.get_y())
@@ -170,13 +175,12 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]):
             pdf.ln()
             pdf.set_font(FONT_FAMILY, "", font_size)
 
-
         x_start, y_start = pdf.get_x(), pdf.get_y()
         
         if fill:
             pdf.set_fill_color(*PRIMARY_COLOR)
         else:
-            pdf.set_fill_color(255)
+            pdf.set_fill_color(255) # White
 
         for i, cell in enumerate(row):
             pdf.set_xy(x_start + sum(col_widths[:i]), y_start)
@@ -195,27 +199,33 @@ def _calculate_col_widths(pdf: FPDF, headers: List[str], rows: List[List[str]], 
     pdf.set_font(FONT_FAMILY, size=font_size)
     num_cols = len(headers)
     
-    # Start with a default ratio
-    if num_cols == 4: # Specific for storyboard
+    # Start with a default ratio for storyboard
+    if num_cols == 4: 
         ratios = [0.05, 0.40, 0.30, 0.25]
     else:
         ratios = [1/num_cols] * num_cols
         
     col_widths = [total_width * r for r in ratios]
 
-    # Adjust based on the longest word in each column to prevent cutoff
-    for row_data in [headers] + rows:
-        for i, cell_text in enumerate(row_data):
-            words = str(cell_text).split()
-            if not words: continue
-            longest_word = max(words, key=lambda w: pdf.get_string_width(w))
-            min_width = pdf.get_string_width(longest_word) + 4 # Add padding
-            if col_widths[i] < min_width:
-                col_widths[i] = min_width
-    
-    # Normalize widths to fit the total page width
+    # Adjust based on the longest word in each column to prevent extreme cutoff
+    # This ensures that even with a small ratio, a column is wide enough for its largest single word
+    all_content = [headers] + rows
+    for i in range(num_cols):
+        max_word_width = 0
+        for row in all_content:
+            if i < len(row):
+                words = str(row[i]).split()
+                if not words: continue
+                longest_word = max(words, key=lambda w: pdf.get_string_width(w))
+                max_word_width = max(max_word_width, pdf.get_string_width(longest_word))
+        
+        min_width = max_word_width + 4 # Add padding
+        if col_widths[i] < min_width:
+            col_widths[i] = min_width
+
+    # Normalize widths to fit the total page width after adjustments
     current_total_width = sum(col_widths)
-    if current_total_width > total_width:
+    if current_total_width > 0:
         scale_factor = total_width / current_total_width
         col_widths = [w * scale_factor for w in col_widths]
 
@@ -225,8 +235,9 @@ def _calculate_row_height(pdf: FPDF, row: List[str], col_widths: List[float], li
     max_lines = 1
     for i, cell in enumerate(row):
         # The -2 provides a small internal padding for the cell
-        lines = pdf.multi_cell(col_widths[i] - 2, line_height, str(cell), split_only=True)
-        max_lines = max(max_lines, len(lines))
+        if i < len(col_widths):
+            lines = pdf.multi_cell(col_widths[i] - 2, line_height, str(cell), split_only=True)
+            max_lines = max(max_lines, len(lines))
     return max_lines * line_height
 
 def _get_product_facts_md(product_facts: Dict[str, Any]) -> List[str]:
