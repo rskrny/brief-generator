@@ -339,7 +339,10 @@ def _wrap_text(pdf: FPDF, width: float, text: str) -> List[str]:
                     else:
                         temp_word += char
                 if temp_word:
-                    lines.append(temp_word)
+                    # After loop, add remaining part of word to a new line if it exists
+                    if current_line:
+                         lines.append(current_line)
+                    current_line = temp_word
 
             elif pdf.get_string_width(current_line + ' ' + word) <= width:
                 current_line += (' ' + word) if current_line else word
@@ -376,15 +379,19 @@ def _render_list_item(
     bullet_width = pdf.get_string_width(bullet_text)
     start_x = pdf.get_x()
 
+    # Set y manually for bullet to ensure alignment with multi-line text
+    y_before = pdf.get_y()
     pdf.cell(bullet_width, line_height, bullet_text)
-    pdf.set_x(start_x + bullet_width)
+    pdf.set_xy(start_x + bullet_width, y_before)
+    
     _safe_multi_cell(pdf, pdf.epw - bullet_width, line_height, text)
 
 def _split_row_cells(
     pdf: FPDF, cells: List[Any], col_widths: List[float], line_height: float
 ) -> Tuple[List[Any], float]:
-    cell_lines: List[Any] = []
+    cell_lines_data: List[Any] = []
     max_lines = 1
+    
     for cell, cw in zip(cells, col_widths):
         img_path = _get_image_path(cell)
         if img_path:
@@ -393,10 +400,8 @@ def _split_row_cells(
                 try:
                     with Image.open(img_path) as im:
                         img_w = _IMAGE_CELL_HEIGHT * im.width / im.height
-                    cell_lines.append({"image": img_path, "width": img_w, "height": _IMAGE_CELL_HEIGHT})
-                    max_lines = max(
-                        max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height)
-                    )
+                    cell_lines_data.append({"image": img_path, "width": img_w, "height": _IMAGE_CELL_HEIGHT})
+                    max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
                     continue
                 except Exception:
                     pass  # fallback to text handling below
@@ -406,10 +411,15 @@ def _split_row_cells(
         
         available_width = max(cw - CELL_PADDING * 2, 0)
         lines = _wrap_text(pdf, available_width, text)
-        cell_lines.append(lines)
+        cell_lines_data.append(lines)
         max_lines = max(max_lines, len(lines))
         
-    return cell_lines, line_height * max_lines
+    row_height = max_lines * line_height + (CELL_PADDING * 2)
+    # Ensure image cells have enough height
+    if any(isinstance(d, dict) and "image" in d for d in cell_lines_data):
+        row_height = max(row_height, _IMAGE_CELL_HEIGHT + CELL_PADDING * 2)
+
+    return cell_lines_data, row_height
 
 def _render_table_row(
     pdf: FPDF,
@@ -430,28 +440,32 @@ def _render_table_row(
         if f"{original_family}B" in pdf.fonts:
             pdf.set_font(original_family, style="B", size=original_size)
         
-    cell_lines, row_height = _split_row_cells(pdf, row_cells, col_widths, line_height)
+    cell_lines_data, row_height = _split_row_cells(pdf, row_cells, col_widths, line_height)
     
+    if pdf.get_y() + row_height > pdf.page_break_trigger:
+        pdf.add_page()
+        y_top = pdf.get_y()
+
     x = start_x
-    for cell, cw in zip(cell_lines, col_widths):
+    for cell_data, cw in zip(cell_lines_data, col_widths):
         pdf.set_xy(x, y_top)
         
         # Draw border first
         pdf.rect(x, y_top, cw, row_height)
         
-        if isinstance(cell, dict) and "image" in cell:
+        if isinstance(cell_data, dict) and "image" in cell_data:
             # Center image inside cell
-            img_w = min(cell["width"], cw - CELL_PADDING * 2)
-            img_h = cell["height"]
+            img_w = min(cell_data["width"], cw - CELL_PADDING * 2)
+            img_h = cell_data["height"]
             img_x = x + (cw - img_w) / 2
             img_y = y_top + (row_height - img_h) / 2
-            pdf.image(cell["image"], x=img_x, y=img_y, w=img_w, h=img_h)
+            pdf.image(cell_data["image"], x=img_x, y=img_y, w=img_w, h=img_h)
         else:
             # Text cell
             pdf.set_xy(x + CELL_PADDING, y_top + CELL_PADDING)
-            for li, l in enumerate(cell):
+            for li, l in enumerate(cell_data):
                 pdf.multi_cell(cw - CELL_PADDING * 2, line_height, l, align='L')
-                if li < len(cell) - 1:
+                if li < len(cell_data) - 1:
                     pdf.set_x(x + CELL_PADDING)
         x += cw
 
@@ -462,10 +476,9 @@ def _render_table_row(
 
 
 def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
-    font_size = 10
-    line_height = 6
+    font_size = 9
+    line_height = 5
 
-    # Store original font settings to restore later
     original_family = pdf.font_family
     original_style = pdf.font_style
     original_size = pdf.font_size_pt
@@ -473,19 +486,28 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     pdf.set_font_size(font_size)
 
     epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin) - PADDING
-    
-    # Calculate column widths based on content
     num_cols = len(headers)
     
-    # Start with equal widths
-    col_widths = [epw / num_cols] * num_cols
-
-    # Simple heuristic: adjust widths based on header text length
-    header_lengths = [pdf.get_string_width(h) for h in headers]
-    total_header_length = sum(header_lengths)
+    # Calculate column widths based on content
+    all_content = [headers] + rows
+    max_content_widths = [0] * num_cols
     
-    if total_header_length > 0:
-        col_widths = [(l / total_header_length) * epw for l in header_lengths]
+    for row in all_content:
+        for i, cell_content in enumerate(row):
+            if i < num_cols:
+                # Use max word width as a heuristic for minimum width
+                words = str(cell_content).split()
+                max_word_width = 0
+                if words:
+                    max_word_width = max(pdf.get_string_width(w) for w in words)
+                
+                max_content_widths[i] = max(max_content_widths[i], max_word_width)
+
+    total_max_width = sum(max_content_widths)
+    if total_max_width > 0:
+        col_widths = [(w / total_max_width) * epw for w in max_content_widths]
+    else: # Fallback for empty table
+        col_widths = [epw / num_cols] * num_cols
 
     # Render header
     if headers:
@@ -495,7 +517,7 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     for row in rows:
         _render_table_row(pdf, row, col_widths, line_height)
 
-    # Restore original font settings after the table
+    # Restore original font settings
     pdf.set_font(original_family, style=original_style, size=original_size)
 
 # ---------- Analyzer → Markdown helpers ----------
@@ -605,36 +627,58 @@ def _scenes_table(analyzer: Dict[str, Any]) -> List[str]:
 
 # ---------- Script helpers ----------
 def _script_opening(script: Dict[str, Any]) -> List[str]:
-    intro = script.get("intro", "") or script.get("opening", "")
-    if not intro:
-        return ["> No opening section."]
-    return ["### Opening", "", intro]
+    try:
+        opening = script["script"]["opening_hook"]
+        dialogue = opening.get("dialogue", "")
+        return ["### Opening", "", dialogue]
+    except KeyError:
+        return ["> No opening section defined in script."]
+
 
 def _script_scenes_table(script: Dict[str, Any]) -> List[str]:
-    scenes = script.get("scenes", []) or []
-    if not scenes:
-        return ["> No generated scenes."]
-    lines = ["### Generated Scenes", "", "| # | Action | Dialogue | On-Screen Text |", "|---:|---|---|---|"]
-    for i, s in enumerate(scenes, 1):
-        lines.append(
-            f"| {i} | {s.get('action','')} | {s.get('dialogue','')} | {s.get('on_screen_text','')} |"
-        )
-    return lines
+    try:
+        scenes = script["script"]["scenes"]
+        if not scenes:
+            return ["> No generated scenes."]
+        lines = ["### Generated Scenes", "", "| # | Action | Dialogue | On-Screen Text |", "|---:|---|---|---|"]
+        for i, s in enumerate(scenes, 1):
+            # Consolidate on-screen text for markdown view
+            ost_list = s.get("on_screen_text", [])
+            ost_str = "; ".join([item.get("text", "") for item in ost_list])
+            
+            lines.append(
+                f"| {i} | {s.get('action','')} | {s.get('dialogue_vo','')} | {ost_str} |"
+            )
+        return lines
+    except KeyError:
+        return ["> Script format invalid or missing scenes."]
+
 
 def _cta_options(script: Dict[str, Any]) -> List[str]:
-    ctas = script.get("cta_options", []) or []
-    if not ctas:
+    try:
+        ctas = script["script"]["cta_options"]
+        if not ctas:
+            return []
+        lines = ["### CTA Options"]
+        for cta in ctas:
+            lines.append(f"- **Variant {cta.get('variant', '')}:** {cta.get('dialogue', '')}")
+        return lines
+    except KeyError:
         return []
-    lines = ["### CTA Options", ""]
-    for c in ctas:
-        lines.append(f"- {c}")
-    return lines
 
 def _script_checklist(script: Dict[str, Any]) -> List[str]:
-    items = script.get("quality_checklist", []) or []
-    if not items:
-        return ["> (no checklist provided)"]
-    return [f"- {x}" for x in items]
+    try:
+        checklist = script.get("checklist", {})
+        if not checklist:
+            return ["> (no checklist provided)"]
+        
+        lines = []
+        for key, value in checklist.items():
+            status = "✅" if value else "❌"
+            lines.append(f"- {key.replace('_', ' ').title()}: {status}")
+        return lines
+    except Exception:
+        return ["> Could not parse checklist."]
 
 def _compliance_block(analyzer: Dict[str, Any], product_facts: Dict[str, Any]) -> List[str]:
     lines = ["### Compliance Notes"]
