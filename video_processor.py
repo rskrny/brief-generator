@@ -52,10 +52,21 @@ def download_video(video_url):
         return None, None
 
 def upload_to_gemini(path, mime_type=None):
-    """Uploads a file to the Gemini API."""
+    """Uploads a file to the Gemini API and waits for it to be ready."""
     print(f"Uploading file: {path}")
     file = genai.upload_file(path, mime_type=mime_type)
-    print(f"Uploaded file '{file.display_name}' as: {file.name}")
+    print(f"Uploaded file '{file.display_name}' as: {file.name}. Waiting for processing...")
+    
+    # Wait for the file to be processed
+    while file.state.name == "PROCESSING":
+        time.sleep(2)
+        file = genai.get_file(file.name)
+        print(f"File state: {file.state.name}")
+
+    if file.state.name == "FAILED":
+        raise Exception("File processing failed on the server.")
+        
+    print("File is ready for use.")
     return file
 
 def delete_uploaded_file(uri: str):
