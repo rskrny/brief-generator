@@ -32,10 +32,13 @@ ANALYZER_JSON_SCHEMA = dedent("""
     "aspect_ratio": "9:16"
   },
   "global_style": {
+    "video_category": "Unboxing|Tutorial|Skit|Challenge|Testimonial|Product-Demo|Day-in-the-Life",
+    "narrative_structure": "Problem/Agitate/Solve|Before-and-After|Direct-Comparison|Myth-Busting|Storytelling-Hook",
     "hook_type": ["pattern_interrupt","reply_to_comment","myth_bust","before_after","demo"],
-    "promise": "",
-    "payoff": "",
-    "cta_core": "",
+    "promise": "A clear statement of what the viewer will gain or learn.",
+    "payoff": "The fulfillment of the promise made in the hook.",
+    "cta_core": "The primary call to action.",
+    "persuasion_tactics": ["Social-Proof","Scarcity","Authority","Demonstration","Urgency"],
     "edit_grammar": {
       "avg_cut_interval_s": 0.0,
       "transition_types": ["hard_cut","jump_cut","speed_ramp","match_cut"],
@@ -46,10 +49,13 @@ ANALYZER_JSON_SCHEMA = dedent("""
     "risk_flags": []
   },
   "influencer_DNA": {
-    "persona_tags": [],
-    "energy_1to5": 3,
+    "persona": {
+      "archetype": "The-Expert|The-Relatable-Friend|The-Entertainer|The-Aspirational-Figure",
+      "communication_style": "Direct-and-Informative|Storytelling|Humorous|Energetic",
+      "energy_1to5": 3
+    },
     "pace": "staccato|flowing",
-    "sentiment_arc": [],
+    "sentiment_arc": ["neutral","positive","excited"],
     "delivery": {
       "POV":"talking_head|vlog_walk|overhead_demo",
       "eye_contact_pct": 0,
@@ -71,10 +77,11 @@ ANALYZER_JSON_SCHEMA = dedent("""
       "idx": 1,
       "start_s": 0.0,
       "end_s": 0.0,
-      "shot": "",
-      "lens_feel": "",
-      "camera": "",
-      "framing": "",
+      "shot_type": "CU|MCU|MS|WS",
+      "lens_feel": "Wide|Standard|Telephoto",
+      "camera_movement": "Static|Handheld|Pan|Tilt|Dolly-Zoom",
+      "shot_composition": "Rule-of-Thirds|Symmetrical|Leading-Lines",
+      "framing": "Chest-up|Full-body|Head-and-shoulders",
       "location": "",
       "lighting": "",
       "action": "",
@@ -91,13 +98,9 @@ ANALYZER_JSON_SCHEMA = dedent("""
       "disclaimer": null
     }
   ],
-  "compliance": {
-    "forbidden_claims": [],
-    "required_disclaimers": []
-  },
   "transferable_patterns": {
-    "must_keep": [],
-    "rewrite": []
+    "must_keep": ["List the core structural elements that make this video work."],
+    "rewrite": ["List elements specific to the original product/creator that should be replaced."]
   }
 }
 """).strip()
@@ -109,7 +112,7 @@ SCRIPT_JSON_SCHEMA = dedent("""
   "script": {
     "opening_hook": {
       "start_s": 0.0,
-      "end_s": 0.0,
+      "end_s": 3.0,
       "dialogue": "",
       "on_screen_text": [
         {"text":"", "t_in":0.0, "t_out":0.0, "position":"", "style":""}
@@ -122,10 +125,11 @@ SCRIPT_JSON_SCHEMA = dedent("""
         "idx": 1,
         "start_s": 0.0,
         "end_s": 0.0,
-        "shot": "",
-        "lens_feel": "",
-        "camera": "",
-        "framing": "",
+        "shot_type": "CU|MCU|MS|WS",
+        "lens_feel": "Wide|Standard|Telephoto",
+        "camera_movement": "Static|Handheld|Pan|Tilt|Dolly-Zoom",
+        "shot_composition": "Rule-of-Thirds|Symmetrical|Leading-Lines",
+        "framing": "Chest-up|Full-body|Head-and-shoulders",
         "location": "",
         "lighting": "",
         "action": "",
@@ -169,9 +173,10 @@ SCRIPT_JSON_SCHEMA = dedent("""
 
 
 ANALYZER_SYSTEM_PREAMBLE = dedent("""
-You are a Film Director + Editor + Script Supervisor dissecting a short-form video into a director-ready breakdown.
-Think step-by-step and capture the creator's style, but OUTPUT MUST BE JSON ONLY and match the provided schema exactly.
-If you cannot verify a field, set a safe default or null. Never invent on-screen text.
+You are an expert Film Director and Viral Marketing Strategist. Your task is to dissect a short-form video into a director-ready JSON breakdown.
+Think step-by-step. Your analysis must be deep, identifying the underlying formulas that make the video successful.
+OUTPUT MUST BE VALID JSON ONLY and must match the provided schema exactly. Do not add comments or markdown.
+If you cannot verify a field, use a safe default, null, or an empty array.
 """).strip()
 
 ANALYZER_USER_INSTRUCTIONS = dedent(f"""
@@ -180,20 +185,19 @@ Return ONLY valid JSON adhering to this schema:
 {ANALYZER_JSON_SCHEMA}
 
 Rules:
-1) Provide accurate video_metadata.duration_s and ensure the last scene's end_s equals this duration.
-2) Every scene is a shooting-script entry: include start_s, end_s, shot, lens_feel, camera, framing, location, lighting, action, dialogue_vo (or ""), on_screen_text, sfx, music_moment, transition_out, retention_device, product_focus, disclaimer.
-3) Populate influencer_DNA from delivery evidence: persona_tags, energy_1to5, pace, sentiment_arc, delivery (POV, eye_contact_pct, gesture_style, rhetoric), and editing_style (cuts, text_style, anim, color_grade).
-4) Create a beats array marking hooks, emphatic punches, reveals, and CTA entries by timestamp.
-5) Note compliance risks in compliance.forbidden_claims and required_disclaimers.
-6) Flag reusable techniques in transferable_patterns.must_keep and call out non-transferable elements in transferable_patterns.rewrite.
-7) OUTPUT JSON ONLY. No markdown. No commentary.
+1) Deconstruct the video's core logic. Identify its `video_category` and the `narrative_structure` it follows. List the specific `persuasion_tactics` used to engage the viewer.
+2) Thoroughly profile the creator's on-screen character in the `influencer_DNA.persona` object. Define their `archetype` and `communication_style`.
+3) For each scene, provide granular detail on the filmmaking itself: `camera_movement`, `shot_composition`, and other visual elements.
+4. Ensure the last scene's end_s equals `video_metadata.duration_s`.
+5. Identify the core reusable formula for success in `transferable_patterns.must_keep`.
+6. OUTPUT JSON ONLY. No markdown. No commentary.
 """).strip()
 
 
 SCRIPT_SYSTEM_PREAMBLE = dedent("""
-You are a Creative Director + AD + Copy Chief. 
-Consume the Analyzer JSON and author a NEW script for the TARGET product/brand. 
-Think step-by-step, but OUTPUT MUST BE JSON ONLY and must match the provided schema exactly. 
+You are a Creative Director and expert Copywriter specializing in high-performing short-form video ads.
+You will consume an Analyzer JSON of a successful reference video and use it to author a NEW script for a different product/brand.
+Think step-by-step, but OUTPUT MUST BE VALID JSON ONLY and must match the provided schema exactly.
 """).strip()
 
 SCRIPT_USER_INSTRUCTIONS_TEMPLATE = dedent(f"""
@@ -203,12 +207,12 @@ Schema to return (JSON only):
 {SCRIPT_JSON_SCHEMA}
 
 Constraints:
-- Preserve only transferable_patterns.must_keep; rewrite everything else for TARGET.
-- All claims must come from the provided whitelist; otherwise propose alternates in "notes_for_legal".
-- Timing must fit the requested runtime ±0.5s.
-- Each scene must include: action, exact dialogue/VO, exact on-screen text (2-line max, ~7–10 words per line), shot & camera move, transitions, SFX, music cues, and a reason-to-watch in the first 3s.
-- Provide two endings: (A) hard CTA, (B) soft loop (transition 'loop_back_to_scene_1').
-- OUTPUT JSON ONLY. No markdown. No commentary.
+- **Replicate the Formula:** You MUST adopt the `narrative_structure`, `video_category`, `persuasion_tactics`, and `influencer_DNA.persona` from the analysis. The goal is to recreate the *formula* of the successful video, not its literal content.
+- **Use Transferable Patterns:** Build your script around the `transferable_patterns.must_keep` identified in the analysis.
+- **Claim-Safe Copy:** All product claims in dialogue or on-screen text MUST come from the provided `product_facts.approved_claims` whitelist.
+- **Adhere to Timing:** The total runtime must match the requested `target_runtime_s` (within ±0.5s).
+- **Provide Two Endings:** Generate two CTA options: (A) a direct, hard CTA and (B) a soft, looping CTA that transitions back to the beginning ('loop_back_to_scene_1').
+- **OUTPUT JSON ONLY.** No markdown. No commentary.
 """).strip()
 
 
@@ -320,13 +324,6 @@ def build_script_generator_messages(
     {inputs_json}
 
     {SCRIPT_USER_INSTRUCTIONS_TEMPLATE}
-
-    Additional rules:
-    - Claims whitelist: product_facts.approved_claims ONLY.
-    - If a necessary selling point is not in the whitelist, add a polite alternative to "notes_for_legal" and keep it OUT of dialogue/on-screen text.
-    - Ensure readable on-screen text (2-line max, ~7–10 words/line) and place it in safe areas (top/bottom margins respected).
-    - No superlatives ("best", "ultimate") unless product_facts contains substantiation.
-    - Include brand name in dialogue at least once (if provided in product_facts.brand).
     """).strip()
 
     messages = [
