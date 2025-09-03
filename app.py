@@ -198,7 +198,7 @@ analyze_col, script_col = st.columns(2)
 with analyze_col:
     if st.button("🔎 Run Full Video Analysis", use_container_width=True):
         for key in st.session_state.keys():
-            if key != 'claims_text' and key != 'forbidden_text' and key != 'disclaimers_text':
+            if key not in ['claims_text', 'forbidden_text', 'disclaimers_text']:
                  st.session_state[key] = None
 
         if not video_url:
