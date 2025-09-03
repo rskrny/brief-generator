@@ -14,6 +14,7 @@ import base64
 
 import streamlit as st
 import google.generativeai as genai
+from google.generativeai.types import generation_types
 
 from prompts import (
     build_analyzer_messages,
@@ -22,7 +23,7 @@ from prompts import (
     validate_analyzer_json,
     validate_script_json,
 )
-from document_generator import brief_from_json_strings, make_brief_pdf
+from document_generator import make_brief_markdown, make_brief_pdf
 from web_utils import fetch_product_page_text
 
 
@@ -85,6 +86,9 @@ def _messages_to_single_prompt(messages: List[Dict[str, str]]) -> str:
 class EmptyGeminiResponseError(RuntimeError):
     """Raised when Gemini returns an empty response."""
 
+class BlockedResponseError(RuntimeError):
+    """Raised when Gemini blocks the response due to safety filters."""
+
 
 def call_gemini_json(
     messages: List[Dict[str, str]],
@@ -92,7 +96,7 @@ def call_gemini_json(
     temperature: float = 0.2,
     max_retries: int = 3,
     retry_base: float = 1.5,
-    max_output_tokens: int = 4096,
+    max_output_tokens: int = 8192,
 ) -> str:
     """Calls Gemini and returns a JSON string (we request application/json)."""
     _ensure_gemini_configured()
@@ -109,12 +113,28 @@ def call_gemini_json(
                     "max_output_tokens": max_output_tokens,
                 },
             )
-            if not resp.text:
-                raise EmptyGeminiResponseError("Gemini returned no text")
+            
+            # Check for safety blocks BEFORE checking for empty text
+            if resp.prompt_feedback and resp.prompt_feedback.block_reason:
+                raise BlockedResponseError(f"Response was blocked due to: {resp.prompt_feedback.block_reason.name}")
+
+            # Check if candidates are empty or have no content
+            if not resp.candidates or not resp.text:
+                 # It might be a finish_reason other than STOP
+                finish_reason = resp.candidates[0].finish_reason if resp.candidates else "UNKNOWN"
+                if str(finish_reason) != "STOP":
+                    raise EmptyGeminiResponseError(f"Gemini returned no text. Finish reason: {finish_reason}")
+                # If finish_reason is STOP but text is empty, still an issue.
+                raise EmptyGeminiResponseError("Gemini returned no text, though the finish reason was STOP.")
+
             return resp.text
+        except (BlockedResponseError, EmptyGeminiResponseError) as e:
+            # Don't retry for these specific, non-transient errors
+            raise e
         except Exception as e:
             last_err = e
             time.sleep(retry_base * (i + 1))
+
     raise RuntimeError(f"Gemini call failed after {max_retries} retries: {last_err}")
 
 
@@ -203,7 +223,8 @@ if st.button("🔍 Research product facts"):
         page_text = ""
         if product_page_url.strip():
             try:
-                page_text = fetch_product_page_text(product_page_url.strip())
+                with st.spinner(f"Fetching {product_page_url}..."):
+                    page_text = fetch_product_page_text(product_page_url.strip())
                 st.session_state["product_page_text"] = page_text
             except Exception as e:
                 st.session_state["product_page_text"] = ""
@@ -233,12 +254,15 @@ if st.button("🔍 Research product facts"):
                     st.info("Review and verify the claims below before proceeding.")
                 else:
                     st.warning("No product facts found; verify the URL or enter claims manually.")
-            except Exception:
-                st.error("Research returned invalid JSON")
-        except EmptyGeminiResponseError:
-            st.warning("No facts were retrieved from Gemini. Please try again.")
+            except json.JSONDecodeError:
+                st.error("Research returned invalid JSON. The raw response is below.")
+                st.code(research_json)
+        except (EmptyGeminiResponseError, BlockedResponseError) as e:
+            st.error(f"**Product research failed:** {e}")
+            st.info("This often happens due to safety filters. Try simplifying the product name or providing a more direct product page URL.")
         except Exception as e:
             st.error(f"Product research failed: {e}")
+            st.code(traceback.format_exc())
     else:
         st.warning("Enter brand and product first.")
 
@@ -313,6 +337,10 @@ analyze_col, script_col = st.columns(2)
 # ---- Analyzer ----
 with analyze_col:
     if st.button("🔎 Run Analyzer", use_container_width=True):
+        st.session_state["analyzer_json_str"] = ""
+        st.session_state["analyzer_parsed"] = None
+        st.session_state["script_json_str"] = ""
+        st.session_state["script_parsed"] = None
         try:
             messages = build_analyzer_messages(
                 platform=platform,
@@ -339,6 +367,12 @@ with analyze_col:
             else:
                 st.success("Analyzer JSON looks good ✅")
 
+        except (EmptyGeminiResponseError, BlockedResponseError) as e:
+            st.error(f"**Analyzer failed:** {e}")
+            st.info("This often happens due to safety filters on the reference video's content. Try a different video.")
+        except json.JSONDecodeError:
+            st.error("Analyzer returned invalid JSON. The raw response from the AI is shown below.")
+            st.code(st.session_state.get("analyzer_json_str", "(No response was stored)"))
         except Exception as e:
             st.error(f"Analyzer failed: {e}")
             st.code(traceback.format_exc())
@@ -346,6 +380,8 @@ with analyze_col:
 # ---- Script Generator ----
 with script_col:
     if st.button("🎬 Generate Script from Analysis", use_container_width=True):
+        st.session_state["script_json_str"] = ""
+        st.session_state["script_parsed"] = None
         try:
             if not st.session_state["analyzer_json_str"]:
                 st.warning("Run the Analyzer first.")
@@ -361,27 +397,30 @@ with script_col:
 
                 with st.spinner("Authoring scene-by-scene script (Gemini)…"):
                     script_json_str = call_gemini_json(messages=messages, model=model, temperature=temperature)
+                
+                st.session_state["script_json_str"] = script_json_str
 
                 try:
                     script_parsed = json.loads(script_json_str)
                 except json.JSONDecodeError:
                     st.error(
-                        "Script generator returned invalid JSON. The output may be invalid or truncated."
+                        "Script generator returned invalid JSON. The raw response is below."
                     )
                     st.code(script_json_str)
                 else:
                     serrs = validate_script_json(
                         script_parsed, target_runtime_s=target_runtime_s
                     )
-
-                    st.session_state["script_json_str"] = script_json_str
                     st.session_state["script_parsed"] = script_parsed
 
                     if serrs:
                         st.warning("Script JSON warnings:\n- " + "\n- ".join(serrs))
                     else:
                         st.success("Script JSON ready ✅")
-
+        
+        except (EmptyGeminiResponseError, BlockedResponseError) as e:
+            st.error(f"**Script generation failed:** {e}")
+            st.info("This often happens due to safety filters. Try simplifying your 'Approved Claims' or other product details.")
         except Exception as e:
             st.error(f"Script generation failed: {e}")
             st.code(traceback.format_exc())
@@ -417,10 +456,10 @@ with col_out_b:
 
 st.markdown("---")
 st.subheader("📄 Export Brief")
-if st.session_state["analyzer_json_str"] and st.session_state["script_json_str"]:
-    md = brief_from_json_strings(
-        analyzer_json_str=st.session_state["analyzer_json_str"],
-        script_json_str=st.session_state["script_json_str"],
+if st.session_state["analyzer_parsed"] and st.session_state["script_parsed"]:
+    md = make_brief_markdown(
+        analyzer=st.session_state["analyzer_parsed"],
+        script=st.session_state["script_parsed"],
         product_facts=product_facts,
         title="AI-Generated Influencer Brief (Director Mode)",
     )
