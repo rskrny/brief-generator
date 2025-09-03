@@ -1,92 +1,70 @@
 # video_processor.py
 import os
-import yt_dlp
-import ffmpeg
-import sys
-import shutil
+import tempfile
+import uuid
 import time
+from typing import Tuple, Optional
+
+import yt_dlp
 import google.generativeai as genai
 
-TEMP_DIR = "temp"
+TEMP_DIR = tempfile.gettempdir()
 
-def download_video(video_url):
-    """
-    Downloads a video from a given URL to a temporary directory
-    and returns its file path and duration.
-    """
-    print(f"Attempting to download video from: {video_url}")
-    
-    if not os.path.exists(TEMP_DIR):
-        os.makedirs(TEMP_DIR)
-        print(f"Created temporary directory: {TEMP_DIR}")
+def download_video(url: str) -> Tuple[Optional[str], Optional[float]]:
+    """Downloads a video from a URL to a temporary directory and returns the path and duration."""
+    video_id = str(uuid.uuid4())
+    output_path = os.path.join(TEMP_DIR, f"{video_id}.mp4")
 
-    video_path = os.path.join(TEMP_DIR, 'video.mp4')
-    
     ydl_opts = {
-        'format': 'best[ext=mp4][height<=1080]',
-        'outtmpl': video_path,
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': output_path,
         'quiet': True,
-        'merge_output_format': 'mp4',
-        'overwrites': True,
     }
-    
+
+    actual_duration = None
     try:
-        print("Starting video download with yt-dlp...")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+            info_dict = ydl.extract_info(url, download=True)
+            actual_duration = info_dict.get('duration')
+
+        # Verify the file was downloaded
+        if not os.path.exists(output_path):
+            # Fallback for cases where the filename is different
+            base_name = os.path.splitext(output_path)[0]
+            for f in os.listdir(TEMP_DIR):
+                if f.startswith(video_id):
+                    output_path = os.path.join(TEMP_DIR, f)
+                    break
+            if not os.path.exists(output_path):
+                 raise FileNotFoundError(f"Failed to find downloaded video for URL: {url}")
         
-        if not os.path.exists(video_path):
-            print("Download failed: video file not found after yt-dlp execution.")
-            return None, None
-            
-        print(f"Video downloaded successfully to: {video_path}")
-        
-        print("Probing video file with ffmpeg to get duration...")
-        probe = ffmpeg.probe(video_path)
-        duration = float(probe['format']['duration'])
-        print(f"Video duration detected: {duration:.2f} seconds")
-        
-        return video_path, duration
+        return output_path, actual_duration
+    
     except Exception as e:
-        print(f"An error occurred during video download or processing: {e}", file=sys.stderr)
+        print(f"Error downloading video: {e}")
         return None, None
 
-def upload_to_gemini(path, mime_type=None):
-    """Uploads a file to the Gemini API and waits for it to be ready."""
-    print(f"Uploading file: {path}")
-    file = genai.upload_file(path, mime_type=mime_type)
-    print(f"Uploaded file '{file.display_name}' as: {file.name}. Waiting for processing...")
-    
-    # Wait for the file to be processed
-    while file.state.name == "PROCESSING":
-        time.sleep(2)
-        file = genai.get_file(file.name)
-        print(f"File state: {file.state.name}")
-
-    if file.state.name == "FAILED":
-        raise Exception("File processing failed on the server.")
-        
-    print("File is ready for use.")
-    return file
-
-def delete_uploaded_file(uri: str):
-    """Deletes a file that has been uploaded to the Gemini API."""
-    print(f"Deleting uploaded file: {uri}")
-    try:
-        genai.delete_file(uri)
-        print("File deleted successfully.")
-    except Exception as e:
-        print(f"Failed to delete file {uri}: {e}", file=sys.stderr)
 
 def cleanup_temp_dir():
-    """Remove all files and folders inside the temporary directory."""
-    if not os.path.exists(TEMP_DIR):
-        print("Temporary directory does not exist, nothing to clean up.")
-        return
-        
-    print(f"Cleaning up temporary directory: {TEMP_DIR}")
+    """Removes temporary video files."""
+    for f in os.listdir(TEMP_DIR):
+        if f.endswith(".mp4"):
+            try:
+                os.remove(os.path.join(TEMP_DIR, f))
+            except OSError as e:
+                print(f"Error removing file {f}: {e}")
+
+def upload_to_gemini(path: str, mime_type: str) -> Optional[genai.client.File]:
+    """Uploads a file to Gemini."""
     try:
-        shutil.rmtree(TEMP_DIR)
-        print("Temporary directory and its contents removed successfully.")
+        return genai.upload_file(path=path, mime_type=mime_type)
     except Exception as e:
-        print(f"Failed to delete temporary directory {TEMP_DIR}: {e}", file=sys.stderr)
+        print(f"Error uploading to Gemini: {e}")
+        return None
+
+def delete_uploaded_file(uri: str):
+    """Deletes a file from Gemini."""
+    try:
+        genai.delete_file(name=uri)
+    except Exception as e:
+        print(f"Error deleting file {uri}: {e}")
