@@ -55,10 +55,13 @@ def make_brief_pdf(
     pdf = BriefPDF(orientation=(orientation or "P")[0].upper(), unit="mm", format="A4")
     _setup_pdf(pdf)
 
+    # --- Page 1: Summary in a single, clean column ---
     pdf.add_page()
     _draw_title(pdf, title, product_facts)
-    _draw_summary_columns(pdf, product_facts, analyzer)
+    _draw_info_section(pdf, "Product Facts", _get_product_facts_md(product_facts))
+    _draw_info_section(pdf, "Reference Video Breakdown", _get_analyzer_summary_md(analyzer))
     
+    # --- Page 2: Storyboard ---
     pdf.add_page()
     _draw_storyboard_table(pdf, script, "Generated Script Storyboard")
 
@@ -103,40 +106,28 @@ def _draw_title(pdf: FPDF, title: str, product_facts: Dict[str, Any]):
     pdf.cell(0, 8, subtitle, 0, 1, "C")
     pdf.ln(10)
 
-def _draw_summary_columns(pdf: FPDF, product_facts: Dict[str, Any], analyzer: Dict[str, Any]):
-    col_width = (pdf.w - pdf.l_margin - pdf.r_margin - 10) / 2
-    y_start = pdf.get_y()
-    
-    _draw_info_box(pdf, "Product Facts", _get_product_facts_md(product_facts), col_width)
-    y_end_col1 = pdf.get_y()
-
-    pdf.set_y(y_start)
-    pdf.set_x(pdf.l_margin + col_width + 10)
-    _draw_info_box(pdf, "Reference Video Breakdown", _get_analyzer_summary_md(analyzer), col_width)
-    y_end_col2 = pdf.get_y()
-
-    pdf.set_y(max(y_end_col1, y_end_col2))
-    pdf.set_x(pdf.l_margin)
-    pdf.ln(10)
-
-def _draw_info_box(pdf: FPDF, title: str, content_lines: List[str], width: float):
+def _draw_info_section(pdf: FPDF, title: str, content_lines: List[str]):
+    """Draws a full-width information section with a title and content."""
     pdf.set_font(FONT_FAMILY, "B", 12)
-    pdf.cell(width, 8, title, 0, 1)
-    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + width, pdf.get_y())
-    pdf.ln(2)
+    pdf.cell(0, 8, title, 0, 1)
+    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + pdf.w - pdf.l_margin - pdf.r_margin, pdf.get_y())
+    pdf.ln(3)
+
     pdf.set_font(FONT_FAMILY, "", 9)
-    x_start = pdf.get_x()
-    for line in content_lines[1:]:
+    for line in content_lines[1:]: # Skip the title line from the markdown generator
         if line.startswith("**"):
+            # Handle bold lead-in text like "**Approved Claims:**"
             parts = line.split("**")
             pdf.set_font(FONT_FAMILY, "B")
-            pdf.cell(pdf.get_string_width(parts[1]), 5, parts[1])
+            pdf.write(5, parts[1])
             pdf.set_font(FONT_FAMILY, "")
-            pdf.multi_cell(width - pdf.get_string_width(parts[1]), 5, parts[2])
+            pdf.write(5, parts[2] + "\n")
+        elif line.startswith("- "):
+            # Handle bullet points
+            pdf.write(5, f"     •  {line[2:]}\n")
         elif line.strip():
-            pdf.multi_cell(width, 5, line)
-        pdf.set_x(x_start)
-    pdf.ln(5)
+            pdf.multi_cell(0, 5, line)
+    pdf.ln(8)
 
 def _draw_storyboard_table(pdf: FPDF, script: Dict[str, Any], title: str):
     pdf.set_font(FONT_FAMILY, "B", 14)
@@ -155,6 +146,7 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]):
     page_width = pdf.w - pdf.l_margin - pdf.r_margin
     col_widths = _calculate_col_widths(pdf, headers, rows, page_width, font_size)
 
+    # --- Render Header ---
     pdf.set_font(FONT_FAMILY, "B", font_size)
     pdf.set_fill_color(*PRIMARY_COLOR)
     pdf.set_text_color(0)
@@ -164,18 +156,27 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]):
         pdf.cell(col_widths[i], line_height * 1.5, header, border=1, fill=True, align="C")
     pdf.ln()
 
+    # --- Render Rows ---
     pdf.set_font(FONT_FAMILY, "", font_size)
     fill = False
     for row in rows:
         row_height = _calculate_row_height(pdf, row, col_widths, line_height)
         if pdf.get_y() + row_height > pdf.page_break_trigger:
             pdf.add_page()
+            # Re-draw headers on new page
+            pdf.set_font(FONT_FAMILY, "B", font_size)
+            for i, header in enumerate(headers):
+                pdf.cell(col_widths[i], line_height * 1.5, header, border=1, fill=True, align="C")
+            pdf.ln()
+            pdf.set_font(FONT_FAMILY, "", font_size)
+
+
         x_start, y_start = pdf.get_x(), pdf.get_y()
         
         if fill:
             pdf.set_fill_color(*PRIMARY_COLOR)
         else:
-            pdf.set_fill_color(255) # White
+            pdf.set_fill_color(255)
 
         for i, cell in enumerate(row):
             pdf.set_xy(x_start + sum(col_widths[:i]), y_start)
@@ -190,33 +191,40 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]):
 # ==========================================================
 
 def _calculate_col_widths(pdf: FPDF, headers: List[str], rows: List[List[str]], total_width: float, font_size: int) -> List[float]:
+    """Calculates robust column widths based on content."""
     pdf.set_font(FONT_FAMILY, size=font_size)
     num_cols = len(headers)
-    min_widths = [pdf.get_string_width(h) + 6 for h in headers]
-    weights = [0] * num_cols
-    for row in [headers] + rows:
-        for i, cell in enumerate(row):
-            weights[i] += len(str(cell))
-    total_weight = sum(weights) if sum(weights) > 0 else 1
-    col_widths = [(w / total_weight) * total_width for w in weights]
     
-    for i in range(num_cols):
-        if col_widths[i] < min_widths[i]:
-            excess = min_widths[i] - col_widths[i]
-            col_widths[i] = min_widths[i]
-            total_width -= excess
+    # Start with a default ratio
+    if num_cols == 4: # Specific for storyboard
+        ratios = [0.05, 0.40, 0.30, 0.25]
+    else:
+        ratios = [1/num_cols] * num_cols
+        
+    col_widths = [total_width * r for r in ratios]
+
+    # Adjust based on the longest word in each column to prevent cutoff
+    for row_data in [headers] + rows:
+        for i, cell_text in enumerate(row_data):
+            words = str(cell_text).split()
+            if not words: continue
+            longest_word = max(words, key=lambda w: pdf.get_string_width(w))
+            min_width = pdf.get_string_width(longest_word) + 4 # Add padding
+            if col_widths[i] < min_width:
+                col_widths[i] = min_width
     
-    total_assigned_width = sum(w for i, w in enumerate(col_widths) if w > min_widths[i])
-    if total_assigned_width > 0:
-        for i in range(num_cols):
-            if col_widths[i] > min_widths[i]:
-                 col_widths[i] = (col_widths[i] / total_assigned_width) * total_width
+    # Normalize widths to fit the total page width
+    current_total_width = sum(col_widths)
+    if current_total_width > total_width:
+        scale_factor = total_width / current_total_width
+        col_widths = [w * scale_factor for w in col_widths]
 
     return col_widths
 
 def _calculate_row_height(pdf: FPDF, row: List[str], col_widths: List[float], line_height: float) -> float:
     max_lines = 1
     for i, cell in enumerate(row):
+        # The -2 provides a small internal padding for the cell
         lines = pdf.multi_cell(col_widths[i] - 2, line_height, str(cell), split_only=True)
         max_lines = max(max_lines, len(lines))
     return max_lines * line_height
