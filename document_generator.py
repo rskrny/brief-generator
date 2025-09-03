@@ -410,6 +410,8 @@ def _render_table_row(
             pdf.set_xy(x + CELL_PADDING / 2, y_top + 1)
             for li, l in enumerate(cell):
                 pdf.multi_cell(cw - CELL_PADDING, line_height, l)
+                if li < len(cell) - 1:
+                    pdf.set_x(x + CELL_PADDING / 2)
         x += cw
 
     pdf.set_xy(start_x, y_top + row_height)
