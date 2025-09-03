@@ -92,7 +92,7 @@ OUTPUT MUST BE VALID JSON ONLY that matches this schema exactly:
 {SCRIPT_JSON_SCHEMA}
 """).strip()
 
-def build_script_generator_messages(analyzer_json: str, product_facts: dict, target_runtime_s: int, platform: str) -> List[Dict[str, str]]:
+def build_script_generator_messages(analyzer_json: str, product_facts: dict, target_runtime_s: int, platform: str, **kwargs) -> List[Dict[str, str]]:
     """Builds the messages list for the script generator."""
     content = SCRIPT_PROMPT_TEMPLATE.format(
         analyzer_json=analyzer_json,
@@ -124,7 +124,7 @@ def build_product_research_messages(brand: str, product: str, page_text: Optiona
 def validate_analyzer_json(parsed: dict) -> list[str]:
     """Lightweight checks for the generated analyzer JSON."""
     errs = []
-    if "scenes" not in parsed or not parsed["scenes"]:
+    if "scenes" not in parsed or not parsed.get("scenes"):
         errs.append("Analyzer JSON missing 'scenes'.")
     if "video_metadata" not in parsed:
         errs.append("Analyzer JSON missing 'video_metadata'.")
