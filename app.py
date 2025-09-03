@@ -13,7 +13,6 @@ import base64
 
 import streamlit as st
 import google.generativeai as genai
-from google.generativeai.types import generation_types
 
 from prompts import (
     build_analyzer_messages,
@@ -88,6 +87,31 @@ def call_gemini_multimodal_json(prompt: str, video_file_uri: str) -> str:
     except Exception as e:
         raise GeminiAPIError(f"Gemini API call failed: {e}")
 
+def call_gemini_json(messages: List[Dict[str, str]]) -> str:
+    """Calls Gemini with a standard text prompt and expects a JSON response."""
+    model = genai.GenerativeModel(MODEL_CHOICE)
+    
+    try:
+        response = model.generate_content(
+            messages,
+            generation_config={
+                "temperature": TEMPERATURE_CHOICE,
+                "response_mime_type": "application/json",
+            }
+        )
+        
+        if response.prompt_feedback and response.prompt_feedback.block_reason:
+            raise GeminiAPIError(f"Response blocked by safety filters: {response.prompt_feedback.block_reason.name}")
+            
+        if not response.candidates or not response.text:
+            finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+            raise GeminiAPIError(f"Gemini returned an empty response. Finish Reason: {finish_reason}")
+
+        return response.text
+        
+    except Exception as e:
+        raise GeminiAPIError(f"Gemini API call failed: {e}")
+
 # =========================
 # Streamlit UI
 # =========================
@@ -127,9 +151,40 @@ product_name = st.text_input("Product", value="", placeholder="Enter product nam
 product_page_url = st.text_input("Product page URL", value="", placeholder="https://…")
 
 if "claims_text" not in st.session_state: st.session_state["claims_text"] = ""
-if "product_facts" not in st.session_state: st.session_state["product_facts"] = {}
+if "forbidden_text" not in st.session_state:
+    st.session_state["forbidden_text"] = (
+        "medical/health claims without substantiation\n"
+        "superlatives without proof\n"
+        "comparative claims without head-to-head evidence"
+    )
+if "disclaimers_text" not in st.session_state: st.session_state["disclaimers_text"] = ""
 
-# ... (Product Research button and text areas remain the same as previous versions) ...
+if st.button("🔍 Research product facts"):
+    if brand_name.strip() and product_name.strip():
+        try:
+            page_text = ""
+            if product_page_url.strip():
+                with st.spinner(f"Fetching {product_page_url}..."):
+                    page_text = fetch_product_page_text(product_page_url.strip())
+            
+            messages = build_product_research_messages(brand_name.strip(), product_name.strip(), page_text or None)
+            
+            with st.spinner("Researching product facts…"):
+                research_json = call_gemini_json(messages)
+
+            data = json.loads(research_json)
+            st.session_state["claims_text"] = "\n".join(data.get("approved_claims", []))
+            st.session_state["forbidden_text"] = "\n".join(data.get("forbidden", []))
+            st.session_state["disclaimers_text"] = "\n".join(data.get("required_disclaimers", []))
+
+            st.info("Review and verify the claims below before proceeding.")
+
+        except Exception as e:
+            st.error(f"Product research failed: {e}")
+
+claims_text = st.text_area("Approved claims (whitelist, one per line)", height=120, key="claims_text")
+forbidden_text = st.text_area("Forbidden claims", height=80, key="forbidden_text")
+disclaimers_text = st.text_area("Required disclaimers", height=60, key="disclaimers_text")
 
 # ========== State Management ==========
 for key in ["analyzer_json_str", "analyzer_parsed", "script_json_str", "script_parsed", "target_runtime_s"]:
@@ -142,9 +197,9 @@ analyze_col, script_col = st.columns(2)
 # ---- Analyzer ----
 with analyze_col:
     if st.button("🔎 Run Full Video Analysis", use_container_width=True):
-        # Reset state
         for key in st.session_state.keys():
-            st.session_state[key] = None
+            if key != 'claims_text' and key != 'forbidden_text' and key != 'disclaimers_text':
+                 st.session_state[key] = None
 
         if not video_url:
             st.warning("Please provide a reference video URL.")
@@ -199,8 +254,87 @@ with script_col:
         if not st.session_state.get("analyzer_parsed"):
             st.warning("Please run the video analysis first.")
         else:
-            # ... (Script generation logic remains the same) ...
-            pass
+            try:
+                product_facts = {
+                    "brand": brand_name,
+                    "product_name": product_name,
+                    "approved_claims": [c.strip() for c in claims_text.split('\n') if c.strip()],
+                    "forbidden": [f.strip() for f in forbidden_text.split('\n') if f.strip()],
+                    "required_disclaimers": [d.strip() for d in disclaimers_text.split('\n') if d.strip()],
+                }
+
+                messages = build_script_generator_messages(
+                    analyzer_json=st.session_state["analyzer_json_str"],
+                    product_facts=product_facts,
+                    target_runtime_s=int(st.session_state["target_runtime_s"]),
+                    platform=platform,
+                )
+
+                with st.spinner("Authoring scene-by-scene script..."):
+                    script_json_str = call_gemini_json(messages)
+
+                script_parsed = json.loads(script_json_str)
+                errs = validate_script_json(script_parsed, target_runtime_s=st.session_state["target_runtime_s"])
+
+                st.session_state["script_json_str"] = script_json_str
+                st.session_state["script_parsed"] = script_parsed
+
+                if errs:
+                    st.warning("Script JSON has warnings:\n- " + "\n- ".join(errs))
+                else:
+                    st.success("✅ Script generated successfully!")
+                    
+            except Exception as e:
+                st.error(f"Script generation failed: {e}")
+                st.code(traceback.format_exc())
     
 # ========== Output / Export ==========
-# ... (Output section remains the same) ...
+st.markdown("---")
+col_out_a, col_out_b = st.columns(2)
+with col_out_a:
+    st.subheader("Analyzer JSON")
+    if st.session_state.get("analyzer_parsed"):
+        st.json(st.session_state["analyzer_parsed"])
+        st.download_button("⬇️ Download analyzer.json", data=st.session_state["analyzer_json_str"].encode("utf-8"), file_name="analyzer.json", mime="application/json")
+    else:
+        st.info("Run the Analyzer to see results here.")
+
+with col_out_b:
+    st.subheader("Script JSON")
+    if st.session_state.get("script_parsed"):
+        st.json(st.session_state["script_parsed"])
+        st.download_button("⬇️ Download script.json", data=st.session_state["script_json_str"].encode("utf-8"), file_name="script.json", mime="application/json")
+    else:
+        st.info("Generate the script to see results here.")
+
+st.markdown("---")
+st.subheader("📄 Export Brief")
+if st.session_state.get("analyzer_parsed") and st.session_state.get("script_parsed"):
+    product_facts = {
+        "brand": brand_name,
+        "product_name": product_name,
+        "approved_claims": [c.strip() for c in claims_text.split('\n') if c.strip()],
+        "forbidden": [f.strip() for f in forbidden_text.split('\n') if f.strip()],
+        "required_disclaimers": [d.strip() for d in disclaimers_text.split('\n') if d.strip()],
+    }
+    
+    md = make_brief_markdown(
+        analyzer=st.session_state["analyzer_parsed"],
+        script=st.session_state["script_parsed"],
+        product_facts=product_facts,
+    )
+    pdf_bytes = make_brief_pdf(
+        analyzer=st.session_state["analyzer_parsed"],
+        script=st.session_state["script_parsed"],
+        product_facts=product_facts,
+    )
+    
+    st.download_button("⬇️ Download brief.md", data=md.encode("utf-8"), file_name="brief.md", mime="text/markdown")
+    st.download_button("⬇️ Download brief.pdf", data=pdf_bytes, file_name="brief.pdf", mime="application/pdf")
+
+    with st.expander("Preview PDF", expanded=False):
+        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+        pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+else:
+    st.info("Run a full analysis and script generation to export a brief.")
