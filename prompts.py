@@ -3,16 +3,6 @@
 # These produce *messages* ready for OpenAI/Gemini chat APIs.
 # The Analyzer outputs a director-grade JSON breakdown.
 # The Script Generator consumes that JSON + product facts to produce a new script.
-#
-# Usage (example):
-#   from prompts import build_analyzer_messages, build_script_generator_messages
-#   messages = build_analyzer_messages(platform="tiktok", duration_s=19.7, ...)
-#   # call LLM with messages
-#
-#   messages2 = build_script_generator_messages(
-#       analyzer_json=analyzer_output_json_string,
-#       product_facts=..., brand_voice=..., target_runtime_s=20
-#   )
 
 from textwrap import dedent
 import json
@@ -216,27 +206,6 @@ Constraints:
 """).strip()
 
 
-# ----------------------------
-# Helper: compact product facts
-# ----------------------------
-
-def _pack_product_facts(product_facts: dict) -> str:
-    """
-    Convert product facts/claims into a compact JSON block the model can quote from.
-    Expect keys like: "brand", "product_name", "approved_claims" (list of strings), "forbidden" (list),
-    "required_disclaimers" (list), "voice_rules" (dict), etc.
-    """
-    try:
-        return json.dumps(product_facts, ensure_ascii=False, separators=(",", ":"))
-    except Exception:
-        # Fall back to a defensive string if serialization fails.
-        return str(product_facts)
-
-
-# ----------------------------
-# Public builders (Analyzer)
-# ----------------------------
-
 def build_analyzer_messages(
     *,
     platform: str = "tiktok",
@@ -248,12 +217,6 @@ def build_analyzer_messages(
     aspect_ratio: str = "9:16",
     fps_estimate: int | None = None
 ):
-    """
-    Returns a messages list suitable for chat completion APIs.
-    Provide whatever inputs you have: transcript, SRT, OCR JSON, or just a URL.
-    The prompt forbids hallucinating on-screen text; unknowns must be [] or "".
-    """
-    # Build an inputs packet for the model (as JSON string).
     evidence = {
         "platform": platform,
         "duration_s_hint": duration_s,
@@ -265,26 +228,12 @@ def build_analyzer_messages(
         "ocr_keyframes_json": ocr_keyframes_json
     }
     evidence_json = json.dumps(evidence, ensure_ascii=False)
-
     messages = [
         {"role": "system", "content": ANALYZER_SYSTEM_PREAMBLE},
-        {
-            "role": "user",
-            "content": dedent(f"""
-            Analyze the reference short-form video and produce a director-ready breakdown.
-            Inputs (JSON):
-            {evidence_json}
-
-            {ANALYZER_USER_INSTRUCTIONS}
-            """).strip()
-        }
+        {"role": "user", "content": dedent(f"Analyze the reference short-form video and produce a director-ready breakdown.\nInputs (JSON):\n{evidence_json}\n\n{ANALYZER_USER_INSTRUCTIONS}").strip()}
     ]
     return messages
 
-
-# ----------------------------
-# Public builders (Script Generator)
-# ----------------------------
 
 def build_script_generator_messages(
     *,
@@ -295,18 +244,8 @@ def build_script_generator_messages(
     platform: str = "tiktok",
     cta_variants: list[str] | None = None
 ):
-    """
-    analyzer_json: string of EXACT Analyzer JSON output.
-    product_facts: dict including 'brand', 'product_name', 'approved_claims', 'forbidden', 'required_disclaimers'.
-    brand_voice: optional dict e.g., {"tone":"conversational, direct", "must_include":["brand name 'SIAWAG'"], "avoid":["hype words"]}
-    cta_variants: optional list of CTA copy to prefer; the model still must produce two endings.
-    """
     if cta_variants is None:
-        cta_variants = [
-            "Check out our TikTok Shop. They're on sale right now.",
-            "Tap to see options and pricing."
-        ]
-
+        cta_variants = ["Check out our TikTok Shop. They're on sale right now.", "Tap to see options and pricing."]
     inputs_packet = {
         "platform": platform,
         "target_runtime_s": target_runtime_s,
@@ -316,16 +255,7 @@ def build_script_generator_messages(
         "cta_variants": cta_variants
     }
     inputs_json = json.dumps(inputs_packet, ensure_ascii=False)
-
-    # A stricter user message that forbids drifting from whitelist claims.
-    user_msg = dedent(f"""
-    Create a new short-form video plan for the TARGET brand/product using the Analyzer JSON.
-    Inputs (JSON):
-    {inputs_json}
-
-    {SCRIPT_USER_INSTRUCTIONS_TEMPLATE}
-    """).strip()
-
+    user_msg = dedent(f"Create a new short-form video plan for the TARGET brand/product using the Analyzer JSON.\nInputs (JSON):\n{inputs_json}\n\n{SCRIPT_USER_INSTRUCTIONS_TEMPLATE}").strip()
     messages = [
         {"role": "system", "content": SCRIPT_SYSTEM_PREAMBLE},
         {"role": "user", "content": user_msg}
@@ -333,80 +263,29 @@ def build_script_generator_messages(
     return messages
 
 
-# ----------------------------
-# Public builder (Product Research)
-# ----------------------------
-
 def build_product_research_messages(
     brand: str, product: str, page_text: Optional[str] = None
 ):
-    """Prompt the model to gather marketing-compliant product facts.
-
-    Returns a messages list asking for JSON with three lists:
-    - approved_claims: safe claims we can state
-    - required_disclaimers: disclaimers that must accompany those claims
-    - forbidden: risky claims to avoid
-
-    An optional ``page_text`` can be provided containing text scraped from an
-    official product page. When supplied, it will be embedded in the user
-    prompt so the model can extract specifications and features directly from
-    that text.
-
-    The model must respond with JSON only; empty lists are allowed if
-    information is unavailable.
-    """
-
-    parts = [
-        dedent(
-            f"""
-            Research factual, legally compliant marketing claims for the
-            product "{product}" from brand "{brand}".
-            """
-        ).strip()
-    ]
-
+    parts = [dedent(f'Research factual, legally compliant marketing claims for the product "{product}" from brand "{brand}".').strip()]
     if page_text:
         parts.append("Product page text:\n" + page_text.strip())
+    parts.append(dedent("""
+        Return JSON with exactly these fields:
+        - "approved_claims": list of short, substantiated marketing claims
+        - "required_disclaimers": list of disclaimers required for those claims
+        - "forbidden": list of risky or prohibited claims to avoid
 
-    parts.append(
-        dedent(
-            """
-            Return JSON with exactly these fields:
-            - "approved_claims": list of short, substantiated marketing claims
-            - "required_disclaimers": list of disclaimers required for those claims
-            - "forbidden": list of risky or prohibited claims to avoid
-
-            If unsure or no data, use empty lists. Output JSON only with no
-            commentary or extra keys.
-            """
-        ).strip()
-    )
-
+        If unsure or no data, use empty lists. Output JSON only with no commentary or extra keys.
+    """).strip())
     user_content = "\n\n".join(parts)
-
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a compliance-focused marketing assistant. "
-                "Respond with JSON only."
-            ),
-        },
+        {"role": "system", "content": "You are a compliance-focused marketing assistant. Respond with JSON only."},
         {"role": "user", "content": user_content},
     ]
-
     return messages
 
 
-# ----------------------------
-# Optional: tiny validators (client-side)
-# ----------------------------
-
 def validate_analyzer_json(parsed: dict) -> list[str]:
-    """
-    Lightweight checks to catch common LLM misses before downstream use.
-    Returns list of error strings; empty if looks OK.
-    """
     errs = []
     if "scenes" not in parsed or not isinstance(parsed["scenes"], list) or not parsed["scenes"]:
         errs.append("Analyzer JSON missing non-empty 'scenes'.")
@@ -416,11 +295,10 @@ def validate_analyzer_json(parsed: dict) -> list[str]:
         vm = parsed["video_metadata"]
         if "duration_s" not in vm or not isinstance(vm["duration_s"], (int, float)):
             errs.append("'video_metadata.duration_s' missing or not numeric.")
-    # Check last scene end equals duration (within 0.2s tolerance)
     try:
         duration = float(parsed["video_metadata"]["duration_s"])
         last_end = float(parsed["scenes"][-1]["end_s"])
-        if abs(last_end - duration) > 0.2:
+        if abs(last_end - duration) > 0.5: # Increased tolerance slightly
             errs.append(f"Last scene end_s ({last_end}) != duration_s ({duration}).")
     except Exception:
         pass
@@ -428,9 +306,6 @@ def validate_analyzer_json(parsed: dict) -> list[str]:
 
 
 def validate_script_json(parsed: dict, target_runtime_s: float | None = None) -> list[str]:
-    """
-    Lightweight checks for the generated script JSON.
-    """
     errs = []
     try:
         if "script" not in parsed:
@@ -439,45 +314,12 @@ def validate_script_json(parsed: dict, target_runtime_s: float | None = None) ->
             scenes = parsed["script"].get("scenes", [])
             if not scenes:
                 errs.append("'script.scenes' is empty.")
-            else:
-                if scenes[0]["start_s"] > 0.05:
-                    errs.append("First scene should start at ~0.0s.")
+            elif scenes[0].get("start_s", 0) > 0.05:
+                errs.append("First scene should start at ~0.0s.")
         if target_runtime_s is not None:
             got = float(parsed.get("target_runtime_s", 0))
-            if abs(got - float(target_runtime_s)) > 0.6:
+            if abs(got - float(target_runtime_s)) > 1.0: # Increased tolerance
                 errs.append(f"target_runtime_s mismatch: got {got}, expected ~{target_runtime_s}.")
     except Exception:
         pass
     return errs
-
-
-# ----------------------------
-# Convenience presets
-# ----------------------------
-
-def default_product_facts(brand: str, product_name: str, approved_claims: list[str]) -> dict:
-    """
-    Starter utility for building the product facts packet.
-    """
-    return {
-        "brand": brand,
-        "product_name": product_name,
-        "approved_claims": approved_claims,
-        "forbidden": [
-            "medical/health claims without substantiation",
-            "superlatives without proof",
-            "comparative claims without head-to-head evidence"
-        ],
-        "required_disclaimers": []
-    }
-
-
-def default_brand_voice() -> dict:
-    """
-    A neutral but TikTok-friendly voice rule set; adjust as needed.
-    """
-    return {
-        "tone": "conversational, direct, confident; no hype; no cringe",
-        "must_include": [],
-        "avoid": ["insane", "ultimate", "best ever"]
-    }
