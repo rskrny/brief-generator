@@ -274,7 +274,8 @@ def make_brief_pdf(
         i += 1
 
     pdf_bytes = pdf.output(dest="S")
-    return bytes(pdf_bytes)
+    pdf_bytes = pdf_bytes.encode("latin-1") if isinstance(pdf_bytes, str) else bytes(pdf_bytes)
+    return pdf_bytes
 
 # ==========================================================
 # Backwards-compatible wrapper used by app.py
