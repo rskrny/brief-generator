@@ -92,7 +92,7 @@ OUTPUT MUST BE VALID JSON ONLY that matches this schema exactly:
 {SCRIPT_JSON_SCHEMA}
 """).strip()
 
-def build_script_generator_messages(analyzer_json: str, product_facts: dict, target_runtime_s: int, platform: str, **kwargs) -> List[Dict[str, str]]:
+def build_script_generator_messages(analyzer_json: str, product_facts: dict, target_runtime_s: int, platform: str) -> List[Dict[str, str]]:
     """Builds the messages list for the script generator."""
     content = SCRIPT_PROMPT_TEMPLATE.format(
         analyzer_json=analyzer_json,
