@@ -25,7 +25,7 @@ from prompts import (
 )
 from document_generator import make_brief_markdown, make_brief_pdf
 from web_utils import fetch_product_page_text
-
+from video_processor import download_video, cleanup_temp_dir
 
 # =========================
 # Key loading (Cloud-first)
@@ -114,22 +114,17 @@ def call_gemini_json(
                 },
             )
             
-            # Check for safety blocks BEFORE checking for empty text
             if resp.prompt_feedback and resp.prompt_feedback.block_reason:
                 raise BlockedResponseError(f"Response was blocked due to: {resp.prompt_feedback.block_reason.name}")
 
-            # Check if candidates are empty or have no content
             if not resp.candidates or not resp.text:
-                 # It might be a finish_reason other than STOP
                 finish_reason = resp.candidates[0].finish_reason if resp.candidates else "UNKNOWN"
                 if str(finish_reason) != "STOP":
                     raise EmptyGeminiResponseError(f"Gemini returned no text. Finish reason: {finish_reason}")
-                # If finish_reason is STOP but text is empty, still an issue.
                 raise EmptyGeminiResponseError("Gemini returned no text, though the finish reason was STOP.")
 
             return resp.text
         except (BlockedResponseError, EmptyGeminiResponseError) as e:
-            # Don't retry for these specific, non-transient errors
             raise e
         except Exception as e:
             last_err = e
@@ -154,7 +149,6 @@ with st.sidebar:
     platform = st.selectbox("Platform", ["tiktok", "reels", "ytshorts"], index=0)
     target_runtime_s = st.slider("Target Runtime (s)", 7, 60, 20, 1)
 
-# Diagnostics (to confirm key is visible on Cloud)
 with st.expander("🔧 Diagnostics (API Key)", expanded=False):
     try:
         vis = False
@@ -182,9 +176,9 @@ st.markdown(
 st.header("1) Reference (keep it simple)")
 colA, colB = st.columns([2, 1])
 with colA:
-    video_url = st.text_input("Reference video URL (optional)", value="", placeholder="https://...")
+    video_url = st.text_input("Reference video URL (required for accurate analysis)", value="", placeholder="https://...")
 with colB:
-    duration_s = st.number_input("Duration (s, optional)", min_value=0.0, value=0.0, step=0.1)
+    duration_s_input = st.number_input("Duration (s, will be auto-detected from URL)", min_value=0.0, value=0.0, step=0.1)
 
 with st.expander("Advanced evidence (optional: improves accuracy)"):
     col1, col2, col3 = st.columns(3)
@@ -295,15 +289,11 @@ with st.expander("Advanced brand controls"):
         value="Check out our TikTok Shop. They're on sale right now.\nTap to see options and pricing.",
     )
 
-# Build packets
 research_packet = st.session_state.get("product_research", {})
-
-# Build packets (use editable text areas so users can modify research results)
 approved_claims = [x.strip() for x in claims_text.splitlines() if x.strip()]
 forbidden_claims = [x.strip() for x in forbidden_text.splitlines() if x.strip()]
 required_disclaimers = [x.strip() for x in disclaimers_text.splitlines() if x.strip()]
 cta_variants = [x.strip() for x in cta_variant_text.splitlines() if x.strip()]
-
 brand_value = research_packet.get("brand") or brand_name.strip()
 product_name_value = research_packet.get("product_name") or product_name.strip()
 
@@ -341,41 +331,57 @@ with analyze_col:
         st.session_state["analyzer_parsed"] = None
         st.session_state["script_json_str"] = ""
         st.session_state["script_parsed"] = None
-        try:
-            messages = build_analyzer_messages(
-                platform=platform,
-                duration_s=(duration_s if duration_s > 0 else None),
-                transcript=(locals().get("transcript_txt") or None),
-                auto_captions_srt=(locals().get("srt_txt") or None),
-                ocr_keyframes_json=(locals().get("ocr_json_str") or None),
-                video_url=(video_url or None),
-                aspect_ratio="9:16",
-                fps_estimate=None,
-            )
+        
+        if not video_url:
+            st.warning("Please provide a reference video URL for analysis.")
+        else:
+            actual_duration = 0.0
+            try:
+                with st.spinner("Downloading reference video to get accurate duration..."):
+                    video_path, actual_duration = download_video(video_url)
+                
+                if not video_path or not actual_duration:
+                    st.error("Failed to download or process the video. Please check the URL and try again.")
+                else:
+                    st.info(f"✅ Video processed successfully. Detected duration: {actual_duration:.2f}s")
+                    
+                    messages = build_analyzer_messages(
+                        platform=platform,
+                        duration_s=actual_duration,
+                        transcript=(transcript_txt or None),
+                        auto_captions_srt=(srt_txt or None),
+                        ocr_keyframes_json=(ocr_json_str or None),
+                        video_url=(video_url or None),
+                        aspect_ratio="9:16",
+                        fps_estimate=None,
+                    )
 
-            with st.spinner("Analyzing reference video (Gemini)…"):
-                analyzer_json_str = call_gemini_json(messages=messages, model=model, temperature=temperature)
+                    with st.spinner("Analyzing reference video with Gemini..."):
+                        analyzer_json_str = call_gemini_json(messages=messages, model=model, temperature=temperature)
 
-            analyzer_parsed = json.loads(analyzer_json_str)
-            errs = validate_analyzer_json(analyzer_parsed)
+                    analyzer_parsed = json.loads(analyzer_json_str)
+                    errs = validate_analyzer_json(analyzer_parsed)
 
-            st.session_state["analyzer_json_str"] = analyzer_json_str
-            st.session_state["analyzer_parsed"] = analyzer_parsed
+                    st.session_state["analyzer_json_str"] = analyzer_json_str
+                    st.session_state["analyzer_parsed"] = analyzer_parsed
 
-            if errs:
-                st.error("Analyzer JSON issues:\n- " + "\n- ".join(errs))
-            else:
-                st.success("Analyzer JSON looks good ✅")
+                    if errs:
+                        st.error("Analyzer JSON issues:\n- " + "\n- ".join(errs))
+                    else:
+                        st.success("Analyzer JSON looks good ✅")
 
-        except (EmptyGeminiResponseError, BlockedResponseError) as e:
-            st.error(f"**Analyzer failed:** {e}")
-            st.info("This often happens due to safety filters on the reference video's content. Try a different video.")
-        except json.JSONDecodeError:
-            st.error("Analyzer returned invalid JSON. The raw response from the AI is shown below.")
-            st.code(st.session_state.get("analyzer_json_str", "(No response was stored)"))
-        except Exception as e:
-            st.error(f"Analyzer failed: {e}")
-            st.code(traceback.format_exc())
+            except (EmptyGeminiResponseError, BlockedResponseError) as e:
+                st.error(f"**Analyzer failed:** {e}")
+                st.info("This can happen due to safety filters on the video's content. Try a different video.")
+            except json.JSONDecodeError:
+                st.error("Analyzer returned invalid JSON. The raw response is below.")
+                st.code(st.session_state.get("analyzer_json_str", "(No response was stored)"))
+            except Exception as e:
+                st.error(f"An unexpected error occurred during analysis: {e}")
+                st.code(traceback.format_exc())
+            finally:
+                with st.spinner("Cleaning up temporary files..."):
+                    cleanup_temp_dir()
 
 # ---- Script Generator ----
 with script_col:
@@ -456,29 +462,25 @@ with col_out_b:
 
 st.markdown("---")
 st.subheader("📄 Export Brief")
-if st.session_state["analyzer_parsed"] and st.session_state["script_parsed"]:
+if st.session_state.get("analyzer_parsed") and st.session_state.get("script_parsed"):
     md = make_brief_markdown(
         analyzer=st.session_state["analyzer_parsed"],
         script=st.session_state["script_parsed"],
         product_facts=product_facts,
-        title="AI-Generated Influencer Brief (Director Mode)",
+        title="AI-Generated Influencer Brief",
     )
     orientation_choice = st.selectbox(
         "Storyboard page orientation",
-        ["Auto", "Portrait", "Landscape"],
+        ["Portrait", "Landscape"],
         index=0,
     )
-    orientation_arg = None
-    if orientation_choice == "Portrait":
-        orientation_arg = "P"
-    elif orientation_choice == "Landscape":
-        orientation_arg = "L"
+    orientation_arg = "P" if orientation_choice == "Portrait" else "L"
 
     pdf_bytes = make_brief_pdf(
         analyzer=st.session_state["analyzer_parsed"],
         script=st.session_state["script_parsed"],
         product_facts=product_facts,
-        title="AI-Generated Influencer Brief (Director Mode)",
+        title="AI-Generated Influencer Brief",
         orientation=orientation_arg,
     )
     st.download_button(
