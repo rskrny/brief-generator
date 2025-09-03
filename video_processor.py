@@ -4,6 +4,8 @@ import yt_dlp
 import ffmpeg
 import sys
 import shutil
+import time
+import google.generativeai as genai
 
 TEMP_DIR = "temp"
 
@@ -14,7 +16,6 @@ def download_video(video_url):
     """
     print(f"Attempting to download video from: {video_url}")
     
-    # Ensure the temp directory exists
     if not os.path.exists(TEMP_DIR):
         os.makedirs(TEMP_DIR)
         print(f"Created temporary directory: {TEMP_DIR}")
@@ -22,7 +23,7 @@ def download_video(video_url):
     video_path = os.path.join(TEMP_DIR, 'video.mp4')
     
     ydl_opts = {
-        'format': 'best[ext=mp4][height<=1080]', # Download best MP4 quality up to 1080p
+        'format': 'best[ext=mp4][height<=1080]',
         'outtmpl': video_path,
         'quiet': True,
         'merge_output_format': 'mp4',
@@ -40,7 +41,6 @@ def download_video(video_url):
             
         print(f"Video downloaded successfully to: {video_path}")
         
-        # Get video duration using ffmpeg
         print("Probing video file with ffmpeg to get duration...")
         probe = ffmpeg.probe(video_path)
         duration = float(probe['format']['duration'])
@@ -51,32 +51,21 @@ def download_video(video_url):
         print(f"An error occurred during video download or processing: {e}", file=sys.stderr)
         return None, None
 
-def extract_screenshots(video_path, timestamps):
-    """
-    Extracts screenshots from a video at specific timestamps.
-    Returns a list of file paths for the extracted screenshots.
-    """
-    print(f"Extracting screenshots from: {video_path}")
-    screenshot_paths = []
-    for i, ts in enumerate(timestamps):
-        screenshot_path = os.path.join(TEMP_DIR, f'screenshot_{i+1}.jpg')
-        try:
-            (
-                ffmpeg
-                .input(video_path, ss=ts)
-                .output(screenshot_path, vframes=1, **{'q:v': 2})
-                .overwrite_output()
-                .run(quiet=True)
-            )
-            screenshot_paths.append(screenshot_path)
-            print(f"  - Screenshot {i+1} saved to: {screenshot_path}")
-        except ffmpeg.Error as e:
-            print(f"An ffmpeg error occurred for timestamp {ts}. Stderr: {e.stderr.decode('utf8')}")
-            continue
-    
-    print("Screenshot extraction complete.")
-    return screenshot_paths
+def upload_to_gemini(path, mime_type=None):
+    """Uploads a file to the Gemini API."""
+    print(f"Uploading file: {path}")
+    file = genai.upload_file(path, mime_type=mime_type)
+    print(f"Uploaded file '{file.display_name}' as: {file.name}")
+    return file
 
+def delete_uploaded_file(uri: str):
+    """Deletes a file that has been uploaded to the Gemini API."""
+    print(f"Deleting uploaded file: {uri}")
+    try:
+        genai.delete_file(uri)
+        print("File deleted successfully.")
+    except Exception as e:
+        print(f"Failed to delete file {uri}: {e}", file=sys.stderr)
 
 def cleanup_temp_dir():
     """Remove all files and folders inside the temporary directory."""
