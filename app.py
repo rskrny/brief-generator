@@ -40,7 +40,8 @@ def _get_google_api_key() -> str:
     except (KeyError, FileNotFoundError):
         key = os.getenv("GOOGLE_API_KEY")
         if key: return key.strip()
-    raise RuntimeError("GOOGLE_API_KEY not found in st.secrets or environment variables.")
+    st.error("GOOGLE_API_KEY not found. Please set it in Streamlit secrets.")
+    st.stop()
 
 def _ensure_gemini_configured():
     """Ensures the Gemini client is configured."""
@@ -160,7 +161,9 @@ if "forbidden_text" not in st.session_state:
 if "disclaimers_text" not in st.session_state: st.session_state["disclaimers_text"] = ""
 
 if st.button("🔍 Research product facts"):
-    if brand_name.strip() and product_name.strip():
+    if not brand_name.strip() or not product_name.strip():
+        st.warning("Please provide a Brand and Product name.")
+    else:
         try:
             page_text = ""
             if product_page_url.strip():
@@ -177,10 +180,11 @@ if st.button("🔍 Research product facts"):
             st.session_state["forbidden_text"] = "\n".join(data.get("forbidden", []))
             st.session_state["disclaimers_text"] = "\n".join(data.get("required_disclaimers", []))
 
-            st.info("Review and verify the claims below before proceeding.")
+            st.success("Product research complete. Please review and verify the claims below.")
 
         except Exception as e:
             st.error(f"Product research failed: {e}")
+            st.code(traceback.format_exc())
 
 claims_text = st.text_area("Approved claims (whitelist, one per line)", height=120, key="claims_text")
 forbidden_text = st.text_area("Forbidden claims", height=80, key="forbidden_text")
@@ -209,12 +213,12 @@ with analyze_col:
                 with st.spinner("Downloading reference video..."):
                     video_path, actual_duration = download_video(video_url)
                 if not video_path or not actual_duration:
-                    raise FileNotFoundError("Failed to download video. Check the URL.")
+                    raise FileNotFoundError("Failed to download video. Please check the URL and try again.")
                 
                 st.session_state["target_runtime_s"] = actual_duration
-                st.info(f"✅ Video downloaded. Detected duration: {actual_duration:.2f}s")
+                st.info(f"✅ Video downloaded successfully. Detected duration: {actual_duration:.2f}s")
                 
-                with st.spinner("Uploading video to Gemini for analysis..."):
+                with st.spinner("Uploading video to Gemini for analysis... This may take a moment."):
                     uploaded_file = upload_to_gemini(video_path, "video/mp4")
                 if not uploaded_file:
                     raise ConnectionError("Failed to upload video file to Gemini.")
@@ -223,7 +227,7 @@ with analyze_col:
 
                 prompt = build_analyzer_messages(duration_s=actual_duration, platform=platform)
 
-                with st.spinner(f"Analyzing video with {MODEL_CHOICE}... (This may take a minute)"):
+                with st.spinner(f"Analyzing video with {MODEL_CHOICE}... (This can take up to a minute)"):
                     analyzer_json_str = call_gemini_multimodal_json(prompt, uploaded_file.name)
                 
                 analyzer_parsed = json.loads(analyzer_json_str)
@@ -233,7 +237,7 @@ with analyze_col:
                 st.session_state["analyzer_parsed"] = analyzer_parsed
 
                 if errs:
-                    st.error("Analyzer JSON has issues:\n- " + "\n- ".join(errs))
+                    st.error("Analyzer JSON has validation issues:\n- " + "\n- ".join(errs))
                 else:
                     st.success("✅ Deep video analysis complete!")
 
@@ -253,6 +257,8 @@ with script_col:
         st.session_state["script_parsed"] = None
         if not st.session_state.get("analyzer_parsed"):
             st.warning("Please run the video analysis first.")
+        elif not brand_name or not product_name:
+            st.warning("Please provide a Brand and Product name before generating the script.")
         else:
             try:
                 product_facts = {
