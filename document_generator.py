@@ -369,16 +369,25 @@ def _split_row_cells(
     for cell, cw in zip(cells, col_widths):
         img_path = _get_image_path(cell)
         if img_path:
-            with Image.open(img_path) as im:
-                img_w = _IMAGE_CELL_HEIGHT * im.width / im.height
-            cell_lines.append({"image": img_path, "width": img_w, "height": _IMAGE_CELL_HEIGHT})
-            max_lines = max(max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height))
+            path = Path(img_path)
+            if path.is_file():
+                try:
+                    with Image.open(img_path) as im:
+                        img_w = _IMAGE_CELL_HEIGHT * im.width / im.height
+                    cell_lines.append({"image": img_path, "width": img_w, "height": _IMAGE_CELL_HEIGHT})
+                    max_lines = max(
+                        max_lines, math.ceil(_IMAGE_CELL_HEIGHT / line_height)
+                    )
+                    continue
+                except Exception:
+                    pass  # fallback to text handling below
+            text = img_path
         else:
             text = "" if cell is None else str(cell)
-            available_width = max(cw - CELL_PADDING, 0)
-            lines = _wrap_text(pdf, available_width, text)
-            cell_lines.append(lines)
-            max_lines = max(max_lines, len(lines))
+        available_width = max(cw - CELL_PADDING, 0)
+        lines = _wrap_text(pdf, available_width, text)
+        cell_lines.append(lines)
+        max_lines = max(max_lines, len(lines))
     return cell_lines, line_height * max_lines
 
 def _render_table_row(
