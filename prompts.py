@@ -1,152 +1,155 @@
 # prompts.py
-# Updated prompts for multimodal analysis.
+from typing import Dict, Any, List, Optional
 
-from textwrap import dedent
-import json
-from typing import Optional, List, Dict
-
-# --- ANALYZER SCHEMA ---
-ANALYZER_JSON_SCHEMA = dedent("""
-{
-  "video_metadata": { "platform": "tiktok|reels|ytshorts", "duration_s": 0, "aspect_ratio": "9:16" },
-  "global_style": {
-    "video_category": "Unboxing|Tutorial|Skit|Challenge|Testimonial|Product-Demo|Day-in-the-Life",
-    "narrative_structure": "Problem/Agitate/Solve|Before-and-After|Direct-Comparison|Myth-Busting|Storytelling-Hook",
-    "hook_type": ["pattern_interrupt", "reply_to_comment", "question_hook"],
-    "promise": "A clear statement of what the viewer will gain or learn.",
-    "payoff": "The fulfillment of the promise.",
-    "cta_core": "The primary call to action.",
-    "persuasion_tactics": ["Social-Proof", "Scarcity", "Authority", "Demonstration", "Urgency"],
-    "music": {"genre":"", "bpm": 0, "mood":[]}
-  },
-  "influencer_DNA": {
-    "persona": {
-      "archetype": "The-Expert|The-Relatable-Friend|The-Entertainer|The-Aspirational-Figure",
-      "communication_style": "Direct-and-Informative|Storytelling|Humorous|Energetic"
-    }
-  },
-  "scenes": [
-    {
-      "idx": 1, "start_s": 0.0, "end_s": 0.0,
-      "shot_type": "CU|MCU|MS|WS", "camera_movement": "Static|Handheld|Pan|Tilt",
-      "action": "", "dialogue_vo": "", "on_screen_text": []
-    }
-  ],
-  "transferable_patterns": { "must_keep": [], "rewrite": [] }
-}
-""").strip()
-
-# --- SCRIPT SCHEMA ---
-SCRIPT_JSON_SCHEMA = dedent("""
-{
-  "target_runtime_s": 0,
-  "script": {
-    "scenes": [
-      {
-        "idx": 1, "start_s": 0.0, "end_s": 0.0,
-        "shot_type": "CU|MCU|MS|WS", "camera_movement": "Static|Handheld|Pan|Tilt",
-        "action": "", "dialogue_vo": "", "on_screen_text": []
-      }
-    ],
-    "cta_options": [
-      {"variant":"A", "dialogue":""},
-      {"variant":"B", "dialogue":""}
-    ]
-  }
-}
-""").strip()
-
-# --- ANALYZER PROMPT BUILDER ---
-ANALYZER_PROMPT_TEMPLATE = dedent(f"""
-You are an expert Film Director and Viral Marketing Strategist. Analyze the provided video file and break it down into a director-ready JSON structure.
-Your analysis must be deep, identifying the underlying formulas that make the video successful.
-The video's platform is {{platform}} and its exact duration is {{duration_s}} seconds.
-
-OUTPUT MUST BE VALID JSON ONLY that matches this schema exactly:
-{ANALYZER_JSON_SCHEMA}
-""").strip()
+# ==================================
+# ===== 1. ANALYZER (MULTIMODAL) =====
+# ==================================
 
 def build_analyzer_messages(duration_s: float, platform: str) -> str:
-    """Builds the text prompt for the multimodal analyzer."""
-    return ANALYZER_PROMPT_TEMPLATE.format(duration_s=duration_s, platform=platform)
+    """Builds the single prompt string for the multimodal video analyzer."""
+    return f"""
+You are an expert creative director specializing in short-form video ads for {platform}.
+Analyze the provided video file, which is {duration_s:.2f} seconds long.
+Your analysis must be deep and insightful, covering the following areas.
+Respond ONLY with a valid JSON object following this schema:
 
-# --- SCRIPT GENERATOR PROMPT BUILDER ---
-SCRIPT_PROMPT_TEMPLATE = dedent(f"""
-You are a Creative Director specializing in high-performing video ads.
-Use the provided Analyzer JSON of a successful reference video to create a NEW script for a different product.
-The goal is to replicate the *formula* of the reference video (its structure, persona, and tactics) for the new product.
+{{
+  "objective": "A concise, one-sentence summary of the video's primary goal (e.g., 'Drive purchases of X product by showcasing its core benefit Y').",
+  "target_audience": "A brief description of the most likely target audience for this ad.",
+  "key_message": "The single most important takeaway message the ad wants to leave with the viewer.",
+  "hook_strategy": {{
+    "type": "Categorize the hook (e.g., 'Problem/Solution', 'Surprising Statement', 'Question', 'Visual Gag', 'Testimonial').",
+    "description": "Explain exactly what happens in the first 3 seconds and why it's effective at capturing attention."
+  }},
+  "pacing_and_editing": {{
+    "type": "Describe the editing style (e.g., 'Fast-paced with quick cuts', 'Slow and cinematic', 'UGC-style with minimal cuts').",
+    "description": "Explain how the pacing and editing choices contribute to the ad's overall feel and effectiveness."
+  }},
+  "tone_and_vibe": "Describe the overall mood and personality of the ad (e.g., 'Humorous and relatable', 'Aspirational and luxurious', 'Informative and trustworthy').",
+  "call_to_action": {{
+    "type": "Categorize the CTA (e.g., 'Direct Command', 'Benefit-driven', 'Urgency-based', 'Soft encouragement').",
+    "description": "Describe the specific call to action used in the ad (verbally, visually, or text overlay)."
+  }}
+}}
+"""
 
-**ANALYZER JSON (Reference Video Breakdown):**
-{{analyzer_json}}
+# ================================
+# ===== 2. PRODUCT RESEARCH ======
+# ================================
 
-**TARGET PRODUCT FACTS:**
-{{product_facts}}
+def build_product_research_messages(brand: str, product: str, page_text: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Builds the messages list for the product fact researcher."""
+    system_prompt = """
+You are a meticulous, risk-averse marketing compliance assistant.
+Your task is to analyze product information and generate a list of approved marketing claims, forbidden claims, and required disclaimers.
+- APPROVED claims must be directly supported by the provided text. Do not invent or infer claims.
+- FORBIDDEN claims are boilerplate legal warnings against making unsubstantiated statements.
+- REQUIRED disclaimers are standard legal notices.
 
-**CONSTRAINTS:**
-- Adopt the `narrative_structure`, `video_category`, and `influencer_DNA.persona` from the analysis.
-- All product claims in dialogue or on-screen text MUST come from the `approved_claims` whitelist.
-- The total runtime must be exactly {{target_runtime_s}} seconds.
-- Provide two CTA options: a direct CTA and a soft, looping CTA.
-
-OUTPUT MUST BE VALID JSON ONLY that matches this schema exactly:
-{SCRIPT_JSON_SCHEMA}
-""").strip()
-
-def build_script_generator_messages(analyzer_json: str, product_facts: dict, target_runtime_s: int, platform: str, **kwargs) -> List[Dict[str, str]]:
-    """Builds the messages list for the script generator."""
-    content = SCRIPT_PROMPT_TEMPLATE.format(
-        analyzer_json=analyzer_json,
-        product_facts=json.dumps(product_facts),
-        target_runtime_s=target_runtime_s
-    )
-    return [{"role": "user", "content": content}]
-
-# --- PRODUCT RESEARCH PROMPT BUILDER ---
-def build_product_research_messages(brand: str, product: str, page_text: Optional[str] = None) -> List[Dict[str, str]]:
-    """Builds the messages for the product research task."""
-    parts = [f'Research factual, legally compliant marketing claims for the product "{product}" from brand "{brand}".']
-    if page_text:
-        parts.append("Product page text:\n" + page_text.strip())
-    parts.append(dedent("""
-        Return JSON with exactly these fields:
-        - "approved_claims": list of short, substantiated marketing claims
-        - "required_disclaimers": list of disclaimers required for those claims
-        - "forbidden": list of risky or prohibited claims to avoid
-        If unsure, use empty lists. Output JSON only.
-    """).strip())
+Respond ONLY with a valid JSON object matching this schema:
+{{
+  "approved_claims": ["List of verifiable claims, e.g., 'Made with 100% organic cotton.'"],
+  "forbidden": ["List of claims to avoid, e.g., 'medical/health claims without substantiation'"],
+  "required_disclaimers": ["List of necessary legal disclaimers, e.g., 'Results may vary.'"]
+}}
+"""
     
+    user_prompt = f"Brand: {brand}\nProduct: {product}\n"
+    if page_text:
+        user_prompt += f"Product Page Text:\n---\n{page_text}\n---"
+    else:
+        user_prompt += "No product page text provided. Base your analysis on the product name alone."
+
+    # CORRECTED FORMAT: Use 'parts' key instead of 'content'
     return [
-        {"role": "system", "content": "You are a compliance-focused marketing assistant. Respond with JSON only."},
-        {"role": "user", "content": "\n\n".join(parts)},
+        {'role': 'user', 'parts': [{'text': system_prompt}]},
+        {'role': 'model', 'parts': [{'text': '{"approved_claims": [], "forbidden": [], "required_disclaimers": []}'}]},
+        {'role': 'user', 'parts': [{'text': user_prompt}]}
     ]
 
-# --- VALIDATORS ---
-def validate_analyzer_json(parsed: dict) -> list[str]:
-    """Lightweight checks for the generated analyzer JSON."""
-    errs = []
-    if "scenes" not in parsed or not parsed.get("scenes"):
-        errs.append("Analyzer JSON missing 'scenes'.")
-    if "video_metadata" not in parsed:
-        errs.append("Analyzer JSON missing 'video_metadata'.")
-    else:
-        duration = parsed["video_metadata"].get("duration_s", 0)
-        if not isinstance(duration, (int, float)) or duration == 0:
-            errs.append("'video_metadata.duration_s' is invalid.")
-        try:
-            last_end = parsed["scenes"][-1].get("end_s", 0)
-            if abs(last_end - duration) > 1.0: # Allow 1s tolerance
-                errs.append(f"Last scene end_s ({last_end}) does not match video duration ({duration}).")
-        except (IndexError, KeyError):
-            pass # Handled by the 'missing scenes' check
-    return errs
 
-def validate_script_json(parsed: dict, target_runtime_s: float | None) -> list[str]:
-    """Lightweight checks for the generated script JSON."""
-    errs = []
-    if "script" not in parsed or "scenes" not in parsed.get("script", {}) or not parsed["script"]["scenes"]:
-        errs.append("Script JSON is missing 'scenes'.")
-    if target_runtime_s is not None:
-        got = parsed.get("target_runtime_s", 0)
-        if abs(got - target_runtime_s) > 1.5: # Allow 1.5s tolerance
-            errs.append(f"Script's target_runtime_s ({got}) differs from the expected ({target_runtime_s:.2f}).")
-    return errs
+# ================================
+# ===== 3. SCRIPT GENERATOR ======
+# ================================
+
+def build_script_generator_messages(analyzer_json: str, product_facts: Dict[str, Any], target_runtime_s: int, platform: str) -> List[Dict[str, Any]]:
+    """Builds the messages list for the script generator."""
+
+    system_prompt = f"""
+You are an expert scriptwriter for high-performance short-form video ads on {platform}.
+You will be given a deep analysis of a successful reference video and a set of facts about a new product.
+Your task is to create a new, original script for the new product that ADAPTS the successful formula of the reference video.
+Do NOT simply copy the reference video. Adapt its structure, pacing, and tone to the new product.
+The total duration of all scenes must closely match the target runtime of {target_runtime_s} seconds.
+
+Adhere to all constraints provided in the product facts, especially the forbidden claims and required disclaimers.
+Respond ONLY with a valid JSON object that follows this schema:
+
+{{
+  "title": "A short, catchy title for the new ad.",
+  "logline": "A one-sentence summary of the ad's concept.",
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "duration_s": "The duration of this specific scene in seconds (integer).",
+      "visuals_description": "A detailed description of what the viewer sees. Be specific about shots, angles, and on-screen text.",
+      "audio_description": "The corresponding voiceover, dialogue, or key sound effects for this scene."
+    }}
+  ]
+}}
+"""
+
+    user_prompt = (
+        f"Reference Video Analysis:\n---\n{analyzer_json}\n---\n\n"
+        f"New Product Facts:\n---\n{product_facts}\n---"
+    )
+
+    # CORRECTED FORMAT: Use 'parts' key instead of 'content'
+    return [
+        {'role': 'user', 'parts': [{'text': system_prompt}]},
+        {'role': 'model', 'parts': [{'text': '{"title": "", "logline": "", "scenes": []}'}]},
+        {'role': 'user', 'parts': [{'text': user_prompt}]}
+    ]
+
+
+# ================================
+# ===== 4. JSON VALIDATORS ======
+# ================================
+
+def validate_analyzer_json(data: Dict[str, Any]) -> List[str]:
+    """Validates the structure of the analyzer's JSON output."""
+    errors = []
+    required_keys = ["objective", "target_audience", "key_message", "hook_strategy", "pacing_and_editing", "tone_and_vibe", "call_to_action"]
+    for key in required_keys:
+        if key not in data:
+            errors.append(f"Missing required key: '{key}'")
+    
+    if "hook_strategy" in data and not isinstance(data["hook_strategy"], dict):
+        errors.append("'hook_strategy' must be a dictionary.")
+    
+    return errors
+
+def validate_script_json(data: Dict[str, Any], target_runtime_s: int) -> List[str]:
+    """Validates the script JSON and checks runtime."""
+    warnings = []
+    if "scenes" not in data or not isinstance(data["scenes"], list):
+        warnings.append("Missing 'scenes' list.")
+        return warnings
+
+    total_duration = 0
+    for i, scene in enumerate(data["scenes"]):
+        if not isinstance(scene, dict):
+            warnings.append(f"Scene {i+1} is not a valid dictionary.")
+            continue
+        
+        duration = scene.get("duration_s")
+        if isinstance(duration, int):
+            total_duration += duration
+        else:
+            warnings.append(f"Scene {i+1} has an invalid or missing 'duration_s'.")
+
+    duration_diff = abs(total_duration - target_runtime_s)
+    if duration_diff > 3:
+        warnings.append(f"Total script duration ({total_duration}s) is more than 3s different from target ({target_runtime_s}s).")
+        
+    return warnings
