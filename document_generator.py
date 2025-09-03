@@ -208,17 +208,17 @@ def make_brief_pdf(
             i += 1
             continue
         if line.startswith("# "):
-            pdf.set_font(pdf.font_family, size=16)
+            pdf.set_font(pdf.font_family, "B", size=16)
             pdf.set_x(pdf.l_margin + PADDING / 2)  # reset to margin
             _safe_multi_cell(pdf, pdf.epw - PADDING, 8, line[2:].strip())
             pdf.set_font(pdf.font_family, size=12)
         elif line.startswith("## "):
-            pdf.set_font(pdf.font_family, size=14)
+            pdf.set_font(pdf.font_family, "B", size=14)
             pdf.set_x(pdf.l_margin + PADDING / 2)
             _safe_multi_cell(pdf, pdf.epw - PADDING, 7, line[3:].strip())
             pdf.set_font(pdf.font_family, size=12)
         elif line.startswith("### "):
-            pdf.set_font(pdf.font_family, size=12)
+            pdf.set_font(pdf.font_family, "B", size=12)
             pdf.set_x(pdf.l_margin + PADDING / 2)
             _safe_multi_cell(pdf, pdf.epw - PADDING, 6, line[4:].strip())
         elif line.startswith("- "):
@@ -253,17 +253,17 @@ def make_brief_pdf(
             i += 1
             continue
         if line.startswith("# "):
-            pdf.set_font(pdf.font_family, size=16)
+            pdf.set_font(pdf.font_family, "B", size=16)
             pdf.set_x(pdf.l_margin + PADDING / 2)
             _safe_multi_cell(pdf, pdf.epw - PADDING, 8, line[2:].strip())
             pdf.set_font(pdf.font_family, size=12)
         elif line.startswith("## "):
-            pdf.set_font(pdf.font_family, size=14)
+            pdf.set_font(pdf.font_family, "B", size=14)
             pdf.set_x(pdf.l_margin + PADDING / 2)
             _safe_multi_cell(pdf, pdf.epw - PADDING, 7, line[3:].strip())
             pdf.set_font(pdf.font_family, size=12)
         elif line.startswith("### "):
-            pdf.set_font(pdf.font_family, size=12)
+            pdf.set_font(pdf.font_family, "B", size=12)
             pdf.set_x(pdf.l_margin + PADDING / 2)
             _safe_multi_cell(pdf, pdf.epw - PADDING, 6, line[4:].strip())
         elif line.startswith("- "):
@@ -314,37 +314,56 @@ def _parse_table_block(
     return header, rows, i
 
 def _wrap_text(pdf: FPDF, width: float, text: str) -> List[str]:
-    """Split *text* into lines that fit within *width*.
-
-    The caller is responsible for accounting for any desired padding so that
-    both wrapping and rendering use the same effective width.  This helper only
-    guards against negative widths to avoid errors from FPDF.
-    """
-
-    # Avoid negative widths which can cause FPDF to raise exceptions
+    """Split *text* into lines that fit within *width*."""
     width = max(width, 0)
-    try:
-        x, y = pdf.get_x(), pdf.get_y()
-        lines = pdf.multi_cell(width, 1, text, border=0, split_only=True)
-        pdf.set_xy(x, y)
-        return lines
-    except FPDFException:
-        char_w = pdf.get_string_width("M") or 1
-        max_chars = max(int(width / char_w), 1)
-        lines = textwrap.wrap(text, width=max_chars, break_long_words=True)
-        while any(pdf.get_string_width(l) > width for l in lines) and max_chars > 1:
-            max_chars -= 1
-            lines = textwrap.wrap(text, width=max_chars, break_long_words=True)
-        return lines
+    if width == 0:
+        return []
+
+    lines = []
+    for line in text.split('\n'):
+        if not line:
+            lines.append('')
+            continue
+        
+        words = line.split(' ')
+        current_line = ''
+        for word in words:
+            # Check if a single word is wider than the available width
+            if pdf.get_string_width(word) > width:
+                # Character-by-character wrapping for very long words
+                temp_word = ''
+                for char in word:
+                    if pdf.get_string_width(temp_word + char) > width:
+                        lines.append(temp_word)
+                        temp_word = char
+                    else:
+                        temp_word += char
+                if temp_word:
+                    lines.append(temp_word)
+
+            elif pdf.get_string_width(current_line + ' ' + word) <= width:
+                current_line += (' ' + word) if current_line else word
+            else:
+                lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+
+    return lines
+
 
 def _safe_multi_cell(pdf: FPDF, width: float, line_height: float, text: str, **kwargs: Any) -> None:
     if width <= 0:
         width = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin)
     width = max(width - PADDING, 0)
-    lines = _wrap_text(pdf, width, text)
+    
+    # Store start x position
     start_x = pdf.get_x()
+    
+    lines = _wrap_text(pdf, width, text)
     for i, line in enumerate(lines):
         pdf.multi_cell(width, line_height, line, **kwargs)
+        # After each line, reset x position for the next line
         if i < len(lines) - 1:
             pdf.set_x(start_x)
 
@@ -353,7 +372,6 @@ def _render_list_item(
     pdf: FPDF, text: str, bullet: str = "\u2022", line_height: float = 6
 ) -> None:
     """Render a bullet list item ensuring wrapped text stays within margins."""
-
     bullet_text = f"{bullet} "
     bullet_width = pdf.get_string_width(bullet_text)
     start_x = pdf.get_x()
@@ -385,10 +403,12 @@ def _split_row_cells(
             text = img_path
         else:
             text = "" if cell is None else str(cell)
-        available_width = max(cw - CELL_PADDING, 0)
+        
+        available_width = max(cw - CELL_PADDING * 2, 0)
         lines = _wrap_text(pdf, available_width, text)
         cell_lines.append(lines)
         max_lines = max(max_lines, len(lines))
+        
     return cell_lines, line_height * max_lines
 
 def _render_table_row(
@@ -396,38 +416,52 @@ def _render_table_row(
     row_cells: List[Any],
     col_widths: List[float],
     line_height: float,
+    is_header: bool = False
 ) -> None:
     start_x = pdf.get_x()
     y_top = pdf.get_y()
-    cell_lines, row_height = _split_row_cells(pdf, row_cells, col_widths, line_height)
+    
+    # Store original font settings
+    original_family = pdf.font_family
+    original_style = pdf.font_style
+    original_size = pdf.font_size_pt
 
+    if is_header:
+        if f"{original_family}B" in pdf.fonts:
+            pdf.set_font(original_family, style="B", size=original_size)
+        
+    cell_lines, row_height = _split_row_cells(pdf, row_cells, col_widths, line_height)
+    
     x = start_x
     for cell, cw in zip(cell_lines, col_widths):
         pdf.set_xy(x, y_top)
+        
+        # Draw border first
+        pdf.rect(x, y_top, cw, row_height)
+        
         if isinstance(cell, dict) and "image" in cell:
-            # draw border
-            pdf.rect(x, y_top, cw, row_height)
-            # center image inside cell
-            img_w = min(cell["width"], cw - CELL_PADDING)
+            # Center image inside cell
+            img_w = min(cell["width"], cw - CELL_PADDING * 2)
             img_h = cell["height"]
             img_x = x + (cw - img_w) / 2
             img_y = y_top + (row_height - img_h) / 2
             pdf.image(cell["image"], x=img_x, y=img_y, w=img_w, h=img_h)
         else:
-            # text cell
-            # draw single border around the cell, then write wrapped lines
-            pdf.rect(x, y_top, cw, row_height)
-            pdf.set_xy(x + CELL_PADDING / 2, y_top + 1)
+            # Text cell
+            pdf.set_xy(x + CELL_PADDING, y_top + CELL_PADDING)
             for li, l in enumerate(cell):
-                pdf.multi_cell(cw - CELL_PADDING, line_height, l)
+                pdf.multi_cell(cw - CELL_PADDING * 2, line_height, l, align='L')
                 if li < len(cell) - 1:
-                    pdf.set_x(x + CELL_PADDING / 2)
+                    pdf.set_x(x + CELL_PADDING)
         x += cw
 
     pdf.set_xy(start_x, y_top + row_height)
+    
+    # Restore original font settings
+    pdf.set_font(original_family, style=original_style, size=original_size)
+
 
 def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
-    # auto column sizing based on header + first few rows
     font_size = 10
     line_height = 6
 
@@ -436,24 +470,28 @@ def _render_table(pdf: FPDF, headers: List[str], rows: List[List[str]]) -> None:
     original_style = pdf.font_style
     original_size = pdf.font_size_pt
 
+    pdf.set_font_size(font_size)
+
     epw = getattr(pdf, "epw", pdf.w - 2 * pdf.l_margin) - PADDING
-    n = max(len(headers), 1)
-    base = epw / n
+    
+    # Calculate column widths based on content
+    num_cols = len(headers)
+    
+    # Start with equal widths
+    col_widths = [epw / num_cols] * num_cols
 
-    col_widths = [base for _ in headers]
+    # Simple heuristic: adjust widths based on header text length
+    header_lengths = [pdf.get_string_width(h) for h in headers]
+    total_header_length = sum(header_lengths)
+    
+    if total_header_length > 0:
+        col_widths = [(l / total_header_length) * epw for l in header_lengths]
 
+    # Render header
     if headers:
-        # Use bold style if available without switching font families
-        if f"{original_family}B" in pdf.fonts:
-            pdf.set_font(original_family, style="B", size=font_size)
-        else:
-            pdf.set_font(original_family, style=original_style, size=font_size)
+        _render_table_row(pdf, headers, col_widths, line_height, is_header=True)
 
-        _render_table_row(pdf, headers, col_widths, line_height)
-
-        # Restore original style for table body
-        pdf.set_font(original_family, style=original_style, size=font_size)
-
+    # Render rows
     for row in rows:
         _render_table_row(pdf, row, col_widths, line_height)
 
